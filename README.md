@@ -1,5 +1,7 @@
 # Deep Research
 
+The code is under developing!!
+
 This is a project for Deep Research, we use the duckduckgo as search engine, and the firecrawl as the content scraper.
 
 ## Features
