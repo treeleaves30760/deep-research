@@ -1,5 +1,5 @@
-from typing import List, Dict, Any
-from ai_provider.ai_provider import chat, AIProvider, AIProviderFactory
+from typing import List, Dict, Any, Optional
+from ai_provider import chat
 from duckduckgo_search import search
 import os
 from dotenv import load_dotenv
@@ -12,31 +12,38 @@ class DeepSearchAgent:
         self.model = model
         self.api_key = os.getenv(f"{ai_provider.upper()}_API_KEY")
 
-    def generate_questions(self, topic: str) -> List[Dict[str, Any]]:
-        """Generate relevant questions for the topic using LLM"""
-        prompt = f"""Given the topic '{topic}', generate 3-5 important questions that would help understand it better.
-        Format each question with 3-4 multiple choice options.
-        Return the response in this format:
-        1. Question: [question text]
+    def generate_initial_questions(self, topic: str) -> List[Dict[str, Any]]:
+        """Generate initial questions to understand user's research focus"""
+        prompt = f"""Given the topic '{topic}', generate 3 important questions that would help understand 
+        which specific aspect the user wants to research. Each question should have 3-4 multiple choice options.
+        
+        Format example:
+        1. Question: What specific aspect of [topic] interests you most?
            Options:
-           a) [option text]
-           b) [option text]
-           c) [option text]
+           a) [specific area 1]
+           b) [specific area 2]
+           c) [specific area 3]
         """
 
         response = chat(prompt, self.ai_provider,
                         self.model, api_key=self.api_key)
-        # Parse the response into structured format
+        return self._parse_questions(response)
+
+    def _parse_questions(self, response: str) -> List[Dict[str, Any]]:
+        """Parse LLM response into structured question format"""
         questions = []
         current_question = {}
 
         for line in response.split('\n'):
             line = line.strip()
-            if line.startswith(('1.', '2.', '3.', '4.', '5.')):
-                if current_question:
-                    questions.append(current_question)
-                current_question = {
-                    'question': line[3:].strip(), 'options': []}
+            if line.startswith(('1.', '2.', '3.')):
+                if 'Question:' in line:
+                    if current_question:
+                        questions.append(current_question)
+                    current_question = {
+                        'question': line[line.index('Question:') + 9:].strip(),
+                        'options': []
+                    }
             elif line.startswith(('a)', 'b)', 'c)', 'd)')):
                 current_question['options'].append(line[3:].strip())
 
@@ -45,96 +52,135 @@ class DeepSearchAgent:
 
         return questions
 
-    def collect_search_data(self, topic: str, answers: List[str]) -> List[Dict[str, Any]]:
-        """Collect search results based on topic and answers"""
-        search_results = []
+    def generate_search_keywords(self, topic: str, answers: List[str], breadth: int) -> List[str]:
+        """Generate search keywords based on topic and user answers"""
+        prompt = f"""Based on the topic '{topic}' and these specific interests: {answers},
+        generate {breadth} specific search keywords or phrases that would help gather targeted information.
+        Each keyword should be focused and specific.
+        Format: Return only the keywords, one per line."""
 
-        # Search for main topic
-        results = search(topic, limit=5)
-        if results['success']:
-            search_results.extend(results['data'])
+        response = chat(prompt, self.ai_provider,
+                        self.model, api_key=self.api_key)
+        return [kw.strip() for kw in response.split('\n') if kw.strip()]
 
-        # Generate related search terms based on answers
-        prompt = f"""Based on the topic '{topic}' and these answers: {answers},
-        generate 3-5 related search terms that would help gather more specific information."""
+    def deep_search(self, topic: str, keywords: List[str], depth: int) -> List[Dict[str, Any]]:
+        """Perform deep search with iterative refinement"""
+        all_results = []
+        current_keywords = keywords.copy()
 
-        related_terms = chat(prompt, self.ai_provider,
-                             self.model, api_key=self.api_key)
-        for term in related_terms.split('\n'):
-            term = term.strip()
-            if term:
-                results = search(f"{topic} {term}", limit=3)
+        for _ in range(depth):
+            # Search for each current keyword
+            for keyword in current_keywords:
+                results = search(f"{topic} {keyword}", limit=3)
                 if results['success']:
-                    search_results.extend(results['data'])
+                    all_results.extend(results['data'])
 
-        return search_results
+            if _ < depth - 1:  # Don't generate new keywords on last iteration
+                # Generate new keywords based on current search results
+                new_keywords = self._generate_refined_keywords(
+                    topic, all_results, len(current_keywords))
+                current_keywords = new_keywords
 
-    def generate_report(self, topic: str, questions: List[Dict[str, Any]],
-                        answers: List[str], search_results: List[Dict[str, Any]]) -> str:
-        """Generate a comprehensive report based on all collected data"""
-        prompt = f"""Write a comprehensive report about '{topic}' based on the following:
+        return all_results
 
-        Questions and Answers:
-        {self._format_qa(questions, answers)}
+    def _generate_refined_keywords(self, topic: str, search_results: List[Dict[str, Any]], num_keywords: int) -> List[str]:
+        """Generate refined keywords based on search results"""
+        content_summary = "\n".join([f"Title: {r['title']}\nContent: {r['markdown']}"
+                                     for r in search_results[:5]])  # Limit to prevent token overflow
 
-        Research Data:
-        {self._format_research(search_results)}
+        prompt = f"""Based on these search results about '{topic}':
 
-        Format the report with clear sections, insights from the answers, and supporting information 
-        from the research. Make it engaging and informative."""
+        {content_summary}
 
-        report = chat(prompt, self.ai_provider,
-                      self.model, api_key=self.api_key)
-        return report
+        Generate {num_keywords} new, more specific search keywords that would help explore deeper aspects 
+        revealed in these results. Focus on interesting patterns or concepts that deserve further investigation.
+        Format: Return only the keywords, one per line."""
 
-    def _format_qa(self, questions: List[Dict[str, Any]], answers: List[str]) -> str:
-        """Format Q&A for the prompt"""
-        qa_text = []
-        for i, (q, a) in enumerate(zip(questions, answers)):
-            qa_text.append(f"Q{i+1}: {q['question']}")
-            qa_text.append(f"Selected Answer: {a}")
-        return "\n".join(qa_text)
+        response = chat(prompt, self.ai_provider,
+                        self.model, api_key=self.api_key)
+        return [kw.strip() for kw in response.split('\n') if kw.strip()]
 
-    def _format_research(self, search_results: List[Dict[str, Any]]) -> str:
-        """Format search results for the prompt"""
-        research_text = []
+    def generate_report(self, topic: str, focus_areas: List[str],
+                        search_results: List[Dict[str, Any]]) -> str:
+        """Generate comprehensive research report"""
+        # Organize search results by relevance
+        content_summary = self._organize_search_results(search_results)
+
+        prompt = f"""Write a comprehensive research report about '{topic}' focusing on: {focus_areas}.
+
+        Based on this research data:
+        {content_summary}
+
+        Structure the report with:
+        1. Executive Summary
+        2. Key Findings for each focus area
+        3. Detailed Analysis
+        4. Emerging Patterns and Insights
+        5. Conclusions
+
+        Make it detailed and analytical, citing specific findings from the research."""
+
+        return chat(prompt, self.ai_provider, self.model, api_key=self.api_key)
+
+    def _organize_search_results(self, search_results: List[Dict[str, Any]]) -> str:
+        """Organize and summarize search results for report generation"""
+        # Remove duplicates and organize by relevance
+        unique_results = []
+        seen_urls = set()
+
         for result in search_results:
-            research_text.append(f"Title: {result['title']}")
-            research_text.append(f"Content: {result['markdown']}\n")
-        return "\n".join(research_text)
+            if result['url'] not in seen_urls:
+                seen_urls.add(result['url'])
+                unique_results.append(result)
+
+        # Format for the prompt
+        summary = []
+        for i, result in enumerate(unique_results, 1):
+            summary.append(f"Source {i}:")
+            summary.append(f"Title: {result['title']}")
+            summary.append(f"Content: {result['markdown']}\n")
+
+        return "\n".join(summary)
 
 
 def main():
-    # Initialize the deep search agent
+    # Initialize the agent
     agent = DeepSearchAgent()
 
-    # Get topic from user
+    # Get topic
     topic = input("Enter the topic you want to research: ")
 
-    # Generate questions
-    print("\nGenerating questions about the topic...")
-    questions = agent.generate_questions(topic)
+    # Generate and ask initial questions
+    print("\nLet's narrow down your research focus...")
+    questions = agent.generate_initial_questions(topic)
 
-    # Collect user answers
     answers = []
-    print("\nPlease answer the following questions:")
     for i, q in enumerate(questions):
         print(f"\n{i+1}. {q['question']}")
         print("Options:")
         for j, option in enumerate(q['options']):
             print(f"   {chr(97+j)}) {option}")
-        answer = input("Your answer (enter the option letter): ")
+        answer = input("Your answer (enter option letter): ")
         answers.append(q['options'][ord(answer.lower()) - ord('a')])
 
-    # Collect search data
-    print("\nGathering research data...")
-    search_results = agent.collect_search_data(topic, answers)
+    # Get search parameters
+    breadth = int(input(
+        "\nEnter the breadth of research (number of parallel search paths, e.g., 3-5): "))
+    depth = int(
+        input("Enter the depth of research (number of iterative searches, e.g., 2-4): "))
 
-    # Generate report
+    # Generate initial keywords and perform deep search
+    print("\nGenerating search keywords...")
+    keywords = agent.generate_search_keywords(topic, answers, breadth)
+
+    print("\nPerforming deep search...")
+    search_results = agent.deep_search(topic, keywords, depth)
+
+    # Generate final report
     print("\nGenerating comprehensive report...")
-    report = agent.generate_report(topic, questions, answers, search_results)
+    report = agent.generate_report(topic, answers, search_results)
 
-    print("\nFinal Report:")
+    print("\nFinal Research Report:")
     print("=" * 80)
     print(report)
     print("=" * 80)
