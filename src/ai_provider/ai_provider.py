@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 import os
 import requests
+import json
 from anthropic import Anthropic
 from google import genai
 from openai import OpenAI
@@ -92,14 +93,53 @@ class OllamaProvider(AIProvider):
             return {}
 
     def chat(self, message: str, model: str = "llama2") -> str:
+        """Improved Ollama chat implementation that handles streaming responses properly"""
         try:
+            # Option 1: Non-streaming request
             response = requests.post(
                 f"{self.host}/api/chat",
-                json={"model": model, "messages": [
-                    {"role": "user", "content": message}]}
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": message}],
+                    "stream": False  # Explicitly disable streaming
+                }
             )
+
             if response.status_code == 200:
-                return response.json().get("message", {}).get("content", "")
+                try:
+                    # Parse the JSON response
+                    result = response.json()
+                    return result.get("message", {}).get("content", "")
+                except json.JSONDecodeError:
+                    # Fallback to Option 2 if JSON parsing fails
+                    pass
+
+            # Option 2: Handle streaming response (fallback)
+            full_response = ""
+            response = requests.post(
+                f"{self.host}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": message}],
+                    "stream": True
+                },
+                stream=True
+            )
+
+            if response.status_code == 200:
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            line_data = json.loads(line.decode('utf-8'))
+                            if "message" in line_data and "content" in line_data["message"]:
+                                chunk = line_data["message"]["content"]
+                                full_response += chunk
+                        except json.JSONDecodeError:
+                            # Skip malformed JSON
+                            continue
+
+                return full_response
+
             return f"Ollama Error: HTTP {response.status_code}"
         except Exception as e:
             return f"Ollama Error: {str(e)}"
