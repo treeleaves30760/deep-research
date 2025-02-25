@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from ai_provider.ai_provider import chat
-from duckduckgo_search import search
+from search.duckduckgo_search import search
 import os
 import json
 import datetime
@@ -11,6 +11,7 @@ from rich.syntax import Syntax
 from rich.markdown import Markdown
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from pathlib import Path
+import re
 
 
 # Initialize Rich console
@@ -179,10 +180,33 @@ class DeepSearchAgent:
         prompt = f"""Based on the topic '{topic}' and these specific interests: {answers},
         generate {breadth} specific search keywords or phrases that would help gather targeted information.
         Each keyword should be focused and specific.
-        Format: Return only the keywords, one per line."""
+        
+        IMPORTANT: Format each keyword by wrapping it with <search_words> tags like this:
+        <search_words>keyword or phrase</search_words>
+        
+        Return only the keywords, one per line with the tags."""
 
         response = self._call_llm(prompt)
-        keywords = [kw.strip() for kw in response.split('\n') if kw.strip()]
+
+        # Parse keywords with search_words tags
+        search_words_pattern = r'<search_words>(.*?)</search_words>'
+        # Find all matches
+        matches = re.findall(search_words_pattern, response)
+
+        # If no matches found, try to parse line by line
+        if not matches:
+            keywords = [kw.strip()
+                        for kw in response.split('\n') if kw.strip()]
+            # Wrap each keyword with search_words tags if they don't have them already
+            keywords = [
+                f"<search_words>{kw}</search_words>" for kw in keywords]
+        else:
+            # Use the extracted matches and wrap them again in search_words tags
+            keywords = [
+                f"<search_words>{match}</search_words>" for match in matches]
+
+        # Limit to requested breadth
+        keywords = keywords[:breadth]
 
         # Store keywords
         self.log_data["keywords"] = keywords
@@ -203,11 +227,19 @@ class DeepSearchAgent:
 
             # Search for each current keyword
             for i, keyword in enumerate(current_keywords):
-                console.print(
-                    f"  [bold]Keyword {i+1}/{len(current_keywords)}:[/] {keyword}")
+                # Extract the keyword from the search_words tags if present
+                search_words_pattern = r'<search_words>(.*?)</search_words>'
+                search_words_match = re.search(search_words_pattern, keyword)
 
-                # Format the search query with special tags
-                search_query = f"{topic} <search_words>{keyword}</search_words>"
+                if search_words_match:
+                    display_keyword = search_words_match.group(1).strip()
+                    search_query = f"{topic} {keyword}"
+                else:
+                    display_keyword = keyword
+                    search_query = f"{topic} {keyword}"
+
+                console.print(
+                    f"  [bold]Keyword {i+1}/{len(current_keywords)}:[/] {display_keyword}")
                 console.print(f"  [dim]Search query: {search_query}[/dim]")
 
                 with Progress(
@@ -229,7 +261,7 @@ class DeepSearchAgent:
                     # Store search results
                     self.log_data["search_results"].extend([
                         {
-                            "keyword": keyword,
+                            "keyword": display_keyword,
                             "search_query": search_query,
                             "iteration": iteration + 1,
                             "results": results['data']
@@ -291,10 +323,35 @@ class DeepSearchAgent:
 
         Generate {num_keywords} new, more specific search keywords that would help explore deeper aspects 
         revealed in these results. Focus on interesting patterns or concepts that deserve further investigation.
-        Format: Return only the keywords, one per line."""
+        
+        IMPORTANT: Format each keyword by wrapping it with <search_words> tags like this:
+        <search_words>keyword or phrase</search_words>
+        
+        Return only the keywords, one per line with the tags."""
 
         response = self._call_llm(prompt)
-        return [kw.strip() for kw in response.split('\n') if kw.strip()]
+
+        # Parse keywords with search_words tags
+        search_words_pattern = r'<search_words>(.*?)</search_words>'
+        # Find all matches
+        matches = re.findall(search_words_pattern, response)
+
+        # If no matches found, try to parse line by line
+        if not matches:
+            keywords = [kw.strip()
+                        for kw in response.split('\n') if kw.strip()]
+            # Wrap each keyword with search_words tags if they don't have them already
+            keywords = [
+                f"<search_words>{kw}</search_words>" for kw in keywords]
+        else:
+            # Use the extracted matches and wrap them again in search_words tags
+            keywords = [
+                f"<search_words>{match}</search_words>" for match in matches]
+
+        # Limit to requested number of keywords
+        keywords = keywords[:num_keywords]
+
+        return keywords
 
     def generate_report(self, topic: str, focus_areas: List[str],
                         search_results: List[Dict[str, Any]]) -> str:
@@ -548,7 +605,7 @@ def main():
     report = agent.generate_report(topic, answers, search_results)
 
     # Create output directory and save results
-    output_dir = "./result"
+    output_dir = "./results"
     agent.save_results(topic, output_dir)
 
     # Display report
