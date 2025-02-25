@@ -1,16 +1,19 @@
 from typing import List, Dict, Any, Optional
-from ai_provider import chat
+from ai_provider.ai_provider import chat
 from duckduckgo_search import search
 import os
 from dotenv import load_dotenv
 
 
 class DeepSearchAgent:
-    def __init__(self, ai_provider: str = "claude", model: str = "claude-3-sonnet"):
+    def __init__(self, ai_provider: str = "ollama", model: str = "deepseek-r1"):
         load_dotenv()
         self.ai_provider = ai_provider
         self.model = model
-        self.api_key = os.getenv(f"{ai_provider.upper()}_API_KEY")
+        if ai_provider != "ollama":
+            self.api_key = os.getenv(f"{ai_provider.upper()}_API_KEY")
+        else:
+            self.api_key = None
 
     def generate_initial_questions(self, topic: str) -> List[Dict[str, Any]]:
         """Generate initial questions to understand user's research focus"""
@@ -25,8 +28,13 @@ class DeepSearchAgent:
            c) [specific area 3]
         """
 
-        response = chat(prompt, self.ai_provider,
-                        self.model, api_key=self.api_key)
+        # Call chat with or without api_key based on provider
+        if self.ai_provider == "ollama":
+            response = chat(prompt, self.ai_provider, self.model)
+        else:
+            response = chat(prompt, self.ai_provider,
+                            self.model, api_key=self.api_key)
+
         return self._parse_questions(response)
 
     def _parse_questions(self, response: str) -> List[Dict[str, Any]]:
@@ -59,8 +67,13 @@ class DeepSearchAgent:
         Each keyword should be focused and specific.
         Format: Return only the keywords, one per line."""
 
-        response = chat(prompt, self.ai_provider,
-                        self.model, api_key=self.api_key)
+        # Call chat with or without api_key based on provider
+        if self.ai_provider == "ollama":
+            response = chat(prompt, self.ai_provider, self.model)
+        else:
+            response = chat(prompt, self.ai_provider,
+                            self.model, api_key=self.api_key)
+
         return [kw.strip() for kw in response.split('\n') if kw.strip()]
 
     def deep_search(self, topic: str, keywords: List[str], depth: int) -> List[Dict[str, Any]]:
@@ -96,8 +109,13 @@ class DeepSearchAgent:
         revealed in these results. Focus on interesting patterns or concepts that deserve further investigation.
         Format: Return only the keywords, one per line."""
 
-        response = chat(prompt, self.ai_provider,
-                        self.model, api_key=self.api_key)
+        # Call chat with or without api_key based on provider
+        if self.ai_provider == "ollama":
+            response = chat(prompt, self.ai_provider, self.model)
+        else:
+            response = chat(prompt, self.ai_provider,
+                            self.model, api_key=self.api_key)
+
         return [kw.strip() for kw in response.split('\n') if kw.strip()]
 
     def generate_report(self, topic: str, focus_areas: List[str],
@@ -120,7 +138,11 @@ class DeepSearchAgent:
 
         Make it detailed and analytical, citing specific findings from the research."""
 
-        return chat(prompt, self.ai_provider, self.model, api_key=self.api_key)
+        # Call chat with or without api_key based on provider
+        if self.ai_provider == "ollama":
+            return chat(prompt, self.ai_provider, self.model)
+        else:
+            return chat(prompt, self.ai_provider, self.model, api_key=self.api_key)
 
     def _organize_search_results(self, search_results: List[Dict[str, Any]]) -> str:
         """Organize and summarize search results for report generation"""
