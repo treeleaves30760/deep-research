@@ -191,6 +191,9 @@ class DeepSearchAgent:
 
     def deep_search(self, topic: str, keywords: List[str], depth: int) -> List[Dict[str, Any]]:
         """Perform deep search with iterative refinement"""
+        import time
+        import random
+
         all_results = []
         current_keywords = keywords.copy()
 
@@ -203,14 +206,17 @@ class DeepSearchAgent:
                 console.print(
                     f"  [bold]Keyword {i+1}/{len(current_keywords)}:[/] {keyword}")
 
+                # Format the search query with special tags
+                search_query = f"{topic} <search_words>{keyword}</search_words>"
+                console.print(f"  [dim]Search query: {search_query}[/dim]")
+
                 with Progress(
                     SpinnerColumn(),
-                    TextColumn(
-                        f"[bold yellow]Searching for '{topic} {keyword}'..."),
+                    TextColumn(f"[bold yellow]Searching...[/]"),
                     transient=True,
                 ) as progress:
                     progress.add_task("searching", total=None)
-                    results = search(f"{topic} {keyword}", limit=3)
+                    results = search(search_query, limit=3)
 
                 if results['success']:
                     console.print(
@@ -224,13 +230,25 @@ class DeepSearchAgent:
                     self.log_data["search_results"].extend([
                         {
                             "keyword": keyword,
-                            "search_query": f"{topic} {keyword}",
+                            "search_query": search_query,
                             "iteration": iteration + 1,
                             "results": results['data']
                         }
                     ])
                 else:
                     console.print(f"    [red]Error: {results['error']}[/red]")
+
+                # Add random sleep between searches to avoid rate limiting
+                if i < len(current_keywords) - 1:  # Don't sleep after the last keyword
+                    sleep_time = random.uniform(1, 3)
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn(
+                            f"[bold blue]Waiting {sleep_time:.1f} seconds before next search...[/]"),
+                        transient=True,
+                    ) as progress:
+                        progress.add_task("sleeping", total=None)
+                        time.sleep(sleep_time)
 
             if iteration < depth - 1:  # Don't generate new keywords on last iteration
                 console.print(
@@ -247,6 +265,18 @@ class DeepSearchAgent:
                         "keywords": new_keywords
                     }
                 ])
+
+                # Add a longer sleep between iterations
+                if iteration < depth - 1:  # Don't sleep after the last iteration
+                    sleep_time = random.uniform(2, 5)
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn(
+                            f"[bold blue]Waiting {sleep_time:.1f} seconds before next iteration...[/]"),
+                        transient=True,
+                    ) as progress:
+                        progress.add_task("sleeping", total=None)
+                        time.sleep(sleep_time)
 
         return all_results
 
