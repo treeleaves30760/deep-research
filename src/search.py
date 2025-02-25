@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from ai_provider.ai_provider import chat
-from search.duckduckgo_search import search
+from search_engine.duckduckgo_search import search
 import os
 import json
 import datetime

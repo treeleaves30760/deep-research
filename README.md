@@ -1,7 +1,5 @@
 # Deep Research
 
-The code is under developing!!
-
 This is a project for Deep Research, we use the duckduckgo as search engine, and the firecrawl as the content scraper.
 
 ## Features
@@ -32,26 +30,15 @@ pip install -r requirements.txt
 
 3. Configure API Keys
 
-Create a `.env` file in the project root with your AI provider API keys:
+Create a `.env` file in the project root with your AI provider API keys
+
+> ![NOTE]
+> If you are going to use ollama, then this step is not needed
 
 ```env
 CLAUDE_API_KEY=your_claude_api_key
 OPENAI_API_KEY=your_openai_api_key
 GEMINI_API_KEY=your_gemini_api_key
-```
-
-## Project Structure
-
-```bash
-deep-research/
-├── src/
-│   ├── search.py
-│   ├── duckduckgo_search.py
-│   └── ai_provider/
-|        └── ai_provider.py
-├── requirements.txt
-├── .env
-└── README.md
 ```
 
 ## Usage
@@ -65,8 +52,31 @@ python src/search.py
 2. Follow the interactive prompts:
    - Enter your research topic
    - Answer the AI-generated questions
+   - Answer the breadth and depth of the search
    - Wait for the search and report generation
    - Review the comprehensive report
+
+![Model Select](./images/model_select.png)
+
+![QA](./images/questions.png)
+
+## Project Structure
+
+```bash
+deep-research/
+├── src/
+│   ├── search.py
+│   ├── search_engine/
+|   |    ├── duckduckgo_search.py
+|   |    ├── bing_search.py
+|   |    └── search_test.py
+│   └── ai_provider/
+|        ├── ai_provider.py
+|        └── ollama_test.py
+├── requirements.txt
+├── .env
+└── README.md
+```
 
 ## AI Provider Support
 
