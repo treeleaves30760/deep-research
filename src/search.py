@@ -13,6 +13,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from pathlib import Path
 import re
 
+# Import the WebsiteToMarkdown converter
+from content_extract.website_to_markdown import WebsiteToMarkdown
+
 
 # Initialize Rich console
 console = Console()
@@ -34,8 +37,12 @@ class DeepSearchAgent:
             "search_results": [],
             "answers": [],
             "keywords": [],
-            "report": ""
+            "report": "",
+            "webpage_contents": []  # Store webpage markdown content
         }
+
+        # Initialize WebsiteToMarkdown converter
+        self.markdown_converter = WebsiteToMarkdown(headless=True)
 
     def _log_llm_interaction(self, prompt: str, response: str):
         """Log LLM interaction for detailed reporting"""
@@ -213,8 +220,8 @@ class DeepSearchAgent:
 
         return keywords
 
-    def deep_search(self, topic: str, keywords: List[str], depth: int) -> List[Dict[str, Any]]:
-        """Perform deep search with iterative refinement"""
+    def deep_search(self, topic: str, keywords: List[str], depth: int, extract_content: bool = True) -> List[Dict[str, Any]]:
+        """Perform deep search with iterative refinement and optional webpage content extraction"""
         import time
         import random
 
@@ -233,10 +240,10 @@ class DeepSearchAgent:
 
                 if search_words_match:
                     display_keyword = search_words_match.group(1).strip()
-                    search_query = f"{topic} {keyword}"
+                    search_query = f"{topic} {display_keyword}"
                 else:
                     display_keyword = keyword
-                    search_query = f"{topic} {keyword}"
+                    search_query = f"{topic} {display_keyword}"
 
                 console.print(
                     f"  [bold]Keyword {i+1}/{len(current_keywords)}:[/] {display_keyword}")
@@ -256,6 +263,12 @@ class DeepSearchAgent:
                     for j, result in enumerate(results['data']):
                         console.print(
                             f"      [dim]{j+1}. {result['title']} - {result['url']}[/dim]")
+
+                    # If extract_content is True, fetch and convert webpage content to markdown
+                    if extract_content:
+                        self._extract_webpage_content(
+                            results['data'], topic, display_keyword, iteration)
+
                     all_results.extend(results['data'])
 
                     # Store search results
@@ -312,14 +325,106 @@ class DeepSearchAgent:
 
         return all_results
 
+    def _extract_webpage_content(self, search_results: List[Dict[str, Any]], topic: str, keyword: str, iteration: int):
+        """Extract content from webpages found in search results"""
+        import time
+        import random
+
+        console.print(
+            f"    [bold cyan]Extracting content from search results...[/]")
+
+        # Process each search result
+        for i, result in enumerate(search_results):
+            url = result['url']
+
+            # Skip if URL is empty or invalid
+            if not url or not url.startswith(('http://', 'https://')):
+                console.print(
+                    f"      [yellow]Skipping invalid URL: {url}[/yellow]")
+                continue
+
+            console.print(f"      [dim]Extracting content from: {url}[/dim]")
+
+            try:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn(
+                        f"[bold blue]Converting webpage to markdown...[/]"),
+                    transient=True,
+                ) as progress:
+                    progress.add_task("converting", total=None)
+
+                    # Determine if JavaScript rendering is needed
+                    # Simplified heuristic: render JS for modern domains or if URL contains certain keywords
+                    render_js = any(js_indicator in url.lower() for js_indicator in
+                                    ['.io', 'github', 'medium', 'dev.to', 'react', 'vue', 'angular', 'app'])
+
+                    # Extract content
+                    try:
+                        markdown_content = self.markdown_converter.url_to_markdown(
+                            url,
+                            render_js=render_js,
+                            wait_time=5,  # 5 seconds wait time
+                            use_readability=True  # Use readability for better extraction
+                        )
+
+                        # Store the extracted content
+                        self.log_data["webpage_contents"].append({
+                            "url": url,
+                            "title": result['title'],
+                            "topic": topic,
+                            "keyword": keyword,
+                            "iteration": iteration + 1,
+                            "markdown": markdown_content,
+                            "timestamp": datetime.datetime.now().isoformat()
+                        })
+
+                        # Update the search result to include the markdown content
+                        result['full_markdown'] = markdown_content
+
+                        console.print(
+                            f"      [green]Successfully extracted content (length: {len(markdown_content)} chars)[/green]")
+
+                    except Exception as e:
+                        console.print(
+                            f"      [red]Error extracting content: {str(e)}[/red]")
+
+            except Exception as e:
+                console.print(
+                    f"      [red]Error processing URL {url}: {str(e)}[/red]")
+
+            # Add random sleep between URL processing to avoid detection
+            if i < len(search_results) - 1:  # Don't sleep after the last URL
+                sleep_time = random.uniform(2, 4)
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn(
+                        f"[bold blue]Waiting {sleep_time:.1f} seconds before next URL...[/]"),
+                    transient=True,
+                ) as progress:
+                    progress.add_task("sleeping", total=None)
+                    time.sleep(sleep_time)
+
     def _generate_refined_keywords(self, topic: str, search_results: List[Dict[str, Any]], num_keywords: int) -> List[str]:
         """Generate refined keywords based on search results"""
-        content_summary = "\n".join([f"Title: {r['title']}\nContent: {r['markdown']}"
-                                     for r in search_results[:5]])  # Limit to prevent token overflow
+        # Use full markdown content if available, otherwise use the snippet
+        content_summary = []
+
+        for r in search_results[:5]:  # Limit to prevent token overflow
+            if 'full_markdown' in r:
+                # If we have full markdown content, extract the most relevant parts
+                # For brevity, just use the first 1000 characters
+                content = r.get('full_markdown', '')[:1000] + "..."
+            else:
+                content = r.get('markdown', '')
+
+            content_summary.append(f"Title: {r['title']}\nContent: {content}")
+
+        content_summary_text = "\n\n".join(content_summary)
 
         prompt = f"""Based on these search results about '{topic}':
 
-        {content_summary}
+        {content_summary_text}
 
         Generate {num_keywords} new, more specific search keywords that would help explore deeper aspects 
         revealed in these results. Focus on interesting patterns or concepts that deserve further investigation.
@@ -404,7 +509,15 @@ class DeepSearchAgent:
         for i, result in enumerate(unique_results, 1):
             summary.append(f"Source {i}:")
             summary.append(f"Title: {result['title']}")
-            summary.append(f"Content: {result['markdown']}\n")
+
+            # Use the full extracted markdown if available
+            if 'full_markdown' in result:
+                # Limit to a reasonable size for the prompt
+                content = result['full_markdown'][:2000] + "..." if len(
+                    result['full_markdown']) > 2000 else result['full_markdown']
+                summary.append(f"Content: {content}\n")
+            else:
+                summary.append(f"Content: {result['markdown']}\n")
 
         return "\n".join(summary)
 
@@ -426,6 +539,21 @@ class DeepSearchAgent:
                 f"*Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
             f.write(self.log_data["report"])
 
+        # Save extracted webpage contents separately
+        if self.log_data["webpage_contents"]:
+            webpages_dir = output_path / "extracted_webpages"
+            webpages_dir.mkdir(exist_ok=True)
+
+            for i, webpage in enumerate(self.log_data["webpage_contents"]):
+                # Create a safe filename from the URL
+                import hashlib
+                url_hash = hashlib.md5(webpage["url"].encode()).hexdigest()[:8]
+                safe_title = re.sub(r'[^\w\-]', '_', webpage["title"])[:50]
+                filename = f"{i+1:02d}_{safe_title}_{url_hash}.md"
+
+                with open(webpages_dir / filename, "w") as f:
+                    f.write(webpage["markdown"])
+
         # Save all logs to JSON file
         log_path = output_path / "search_logs.json"
         with open(log_path, "w") as f:
@@ -434,12 +562,21 @@ class DeepSearchAgent:
         console.print(f"[bold green]Results saved to:[/] {output_path}")
         return str(output_path)
 
+    def close(self):
+        """Close the WebsiteToMarkdown converter"""
+        if hasattr(self, 'markdown_converter'):
+            self.markdown_converter.close()
+
+    def __del__(self):
+        """Ensure resources are properly released"""
+        self.close()
+
 
 def main():
     # Clear console and show banner
     console.clear()
     console.print(Panel("[bold cyan]DeepSearch Research Agent[/]",
-                        subtitle="Enhanced with Rich Logging",
+                        subtitle="Enhanced with Rich Logging & Web Content Extraction",
                         expand=False))
 
     # Initialize the agent
@@ -457,9 +594,9 @@ def main():
     # Default models per provider
     default_models = {
         "ollama": "deepseek-r1",
-        "openai": "gpt-4",
+        "openai": "gpt-4o",
         "claude": "claude-3-sonnet",
-        "gemini": "gemini-pro"
+        "gemini": "gemini"
     }
 
     model = input(
@@ -589,6 +726,10 @@ def main():
     depth = int(
         input("Enter the depth of research (number of iterative searches, e.g., 2-4): "))
 
+    # Ask if the user wants to extract webpage content
+    extract_content = input(
+        "Extract content from webpages? (y/n, default: y): ").strip().lower() != 'n'
+
     # Generate initial keywords and perform deep search
     console.print("\n[bold cyan]Beginning research process...[/]")
     keywords = agent.generate_search_keywords(topic, answers, breadth)
@@ -597,7 +738,8 @@ def main():
     for i, kw in enumerate(keywords):
         console.print(f"{i+1}. {kw}")
 
-    search_results = agent.deep_search(topic, keywords, depth)
+    search_results = agent.deep_search(
+        topic, keywords, depth, extract_content=extract_content)
 
     # Generate final report
     console.print(
@@ -612,6 +754,9 @@ def main():
     console.print("\n[bold green]Final Research Report:[/]")
     console.print(Panel(Markdown(report), title=f"Report: {topic}",
                         border_style="green", expand=True))
+
+    # Clean up resources
+    agent.close()
 
 
 if __name__ == "__main__":
