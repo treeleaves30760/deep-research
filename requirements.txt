@@ -5,3 +5,9 @@ openai
 requests
 python-dotenv
 brotli
+selenium
+beautifulsoup4
+html2text
+webdriver_manager 
+markdown
+rich
