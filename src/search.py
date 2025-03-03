@@ -109,71 +109,53 @@ class DeepSearchAgent:
         return self._parse_questions(response)
 
     def _parse_questions(self, response: str) -> List[Dict[str, Any]]:
-        """Parse LLM response into structured question format"""
+        """Parse LLM response into structured question format - optimized for numbered questions with lettered options"""
         questions = []
-        current_question = {}
+        current_question = None
+        current_options = []
 
-        for line in response.split('\n'):
+        # Remove any thinking or system outputs that might be enclosed in angle brackets
+        response = re.sub(r'<.*?>.*?</.*?>', '', response, flags=re.DOTALL)
+
+        # Process each line
+        for line in response.strip().split('\n'):
             line = line.strip()
             if not line:  # Skip empty lines
                 continue
 
-            # Match question lines with various formats
-            if any(line.startswith(prefix) for prefix in ('1.', '2.', '3.', 'Question:', 'Question ', '#')):
-                question_text = ""
+            # Match numbered questions: "1. Question: What specific..."
+            question_match = re.match(
+                r'^\d+\.\s*(?:Question:?\s*)?(.+)$', line)
+            if question_match:
+                # If we already have a question with options, add it to results
+                if current_question and current_options:
+                    questions.append({
+                        'question': current_question,
+                        'options': current_options
+                    })
+                    current_options = []
 
-                # Extract the question text
-                if 'Question:' in line:
-                    question_text = line[line.index('Question:') + 9:].strip()
-                elif line.startswith(('1.', '2.', '3.')):
-                    # Check if this line has the actual question text
-                    parts = line.split(':', 1)
-                    if len(parts) > 1 and 'question' in parts[0].lower():
-                        question_text = parts[1].strip()
-                    else:
-                        # This might be a numbered line without "Question:" keyword
-                        # Check the next few words to see if it looks like a question
-                        remaining = line[2:].strip()
-                        if remaining and not remaining.lower().startswith('option'):
-                            question_text = remaining
+                # Start a new question
+                current_question = question_match.group(1).strip()
+                continue
 
-                if question_text:
-                    if current_question and current_question.get('options'):
-                        questions.append(current_question)
-                    current_question = {
-                        'question': question_text,
-                        'options': []
-                    }
+            # Match "Options:" header - just skip it
+            if line.lower() == 'options:':
+                continue
 
-            # Match option lines with various formats
-            elif any(line.lower().startswith(prefix) for prefix in ('a)', 'b)', 'c)', 'd)', '- a)', '- b)', 'option a:', 'option b:')):
-                # Extract the option text, handling various formats
-                option_text = ""
+            # Match lettered options: "a) Option text" or "a. Option text"
+            option_match = re.match(r'^([a-z][\)\.:])\s*(.+)$', line)
+            if option_match and current_question:
+                option_text = option_match.group(2).strip()
+                current_options.append(option_text)
+                continue
 
-                # Find where the option text starts after the prefix
-                for prefix in ('a)', 'b)', 'c)', 'd)', '- a)', '- b)', 'option a:', 'option b:'):
-                    if line.lower().startswith(prefix):
-                        start_idx = len(prefix)
-                        option_text = line[start_idx:].strip()
-                        break
-
-                if option_text and current_question:
-                    current_question['options'].append(option_text)
-
-            # Handle options that might be in a different format
-            elif line.startswith('-') and current_question:
-                option_text = line[1:].strip()
-                if option_text and not any(option_text.lower().startswith(w) for w in ['question', 'option']):
-                    current_question['options'].append(option_text)
-
-            # Handle options that start with a letter and parenthesis
-            elif len(line) > 2 and line[0].isalpha() and line[1] == ')' and current_question:
-                option_text = line[2:].strip()
-                if option_text:
-                    current_question['options'].append(option_text)
-
-        if current_question and current_question.get('options'):
-            questions.append(current_question)
+        # Add the last question if we have one
+        if current_question and current_options:
+            questions.append({
+                'question': current_question,
+                'options': current_options
+            })
 
         return questions
 
