@@ -440,34 +440,132 @@ class DeepSearchAgent:
 
         return keywords
 
+    def _extract_content_between_backticks(self, text: str) -> str:
+        """Extract content between triple backticks, if exists"""
+        pattern = r"```(?:markdown)?\n(.*?)```"
+        matches = re.findall(pattern, text, re.DOTALL)
+        if matches:
+            return matches[0].strip()
+        return text.strip()
+
+    def _generate_report_structure(self, topic: str) -> str:
+        """Generate the initial structure of the research report"""
+        console.print("[bold cyan]Generating report structure...[/]")
+
+        prompt = f"""Create a detailed structure for a research report about '{topic}'.
+        
+        The structure should include all major sections and subsections, but instead of actual content,
+        use [Content Tag] as a placeholder.
+        
+        IMPORTANT: Wrap your response in triple backticks (```). Only the content within the backticks will be used.
+        
+        Example format:
+        ```
+        # Title
+        [Content Tag]
+        
+        ## Abstract
+        [Content Tag]
+        
+        ## Introduction
+        [Content Tag]
+        
+        // ... other sections
+        ```
+        
+        Include all necessary sections for a comprehensive academic research report, such as:
+        - Background/Literature Review
+        - Methodology/Methods
+        - Results/Findings
+        - Discussion
+        - Conclusion
+        - References
+        
+        Each section should have appropriate subsections where relevant."""
+
+        response = self._call_llm(prompt)
+        structure = self._extract_content_between_backticks(response)
+        return structure
+
     def generate_report(self, topic: str, focus_areas: List[str],
                         search_results: List[Dict[str, Any]]) -> str:
-        """Generate comprehensive research report"""
+        """Generate comprehensive research report in stages"""
         console.print("[bold cyan]Generating final research report...[/]")
+
+        # First, generate the report structure
+        report_structure = self._generate_report_structure(topic)
 
         # Organize search results by relevance
         content_summary = self._organize_search_results(search_results)
 
-        prompt = f"""Write a comprehensive research report about '{topic}' focusing on: {focus_areas}.
+        # Parse the structure to identify all [Content Tag] locations
+        sections = []
+        current_section = ""
+        current_headers = []
 
-        Based on this research data:
-        {content_summary}
+        for line in report_structure.split('\n'):
+            line = line.strip()
+            if line.startswith('#'):
+                if current_section and '[Content Tag]' in current_section:
+                    sections.append({
+                        'headers': current_headers.copy(),
+                        'content': current_section
+                    })
+                current_section = line + '\n'
+                current_headers = [line]
+            else:
+                current_section += line + '\n'
 
-        Structure the report with:
-        1. Executive Summary
-        2. Key Findings for each focus area
-        3. Detailed Analysis
-        4. Emerging Patterns and Insights
-        5. Conclusions
+        if current_section and '[Content Tag]' in current_section:
+            sections.append({
+                'headers': current_headers.copy(),
+                'content': current_section
+            })
 
-        Make it detailed and analytical, citing specific findings from the research."""
+        # Generate content for each section
+        final_report = []
+        previous_content = ""
 
-        report = self._call_llm(prompt)
+        for section in sections:
+            section_title = ' '.join(h.lstrip('#').strip()
+                                     for h in section['headers'])
+            console.print(
+                f"[bold cyan]Generating content for section: {section_title}[/]")
+
+            prompt = f"""Write the content for the {section_title} section of the research report about '{topic}'.
+
+            Previous content generated:
+            {previous_content}
+
+            Research data available:
+            {content_summary}
+
+            Focus areas: {focus_areas}
+
+            IMPORTANT: 
+            1. Wrap your response in triple backticks (```). Only the content within the backticks will be used.
+            2. Write detailed, well-structured content for this section that flows naturally from the previous content.
+            3. Make it analytical and cite specific findings from the research data where relevant.
+            4. Do not include any meta-commentary or reasoning outside the backticks."""
+
+            response = self._call_llm(prompt)
+            section_content = self._extract_content_between_backticks(response)
+
+            # Replace [Content Tag] with generated content
+            final_section = section['content'].replace(
+                '[Content Tag]', section_content)
+            final_report.append(final_section)
+
+            # Update previous content for context in next iteration
+            previous_content += f"\n{section_title}:\n{section_content}\n"
+
+        # Combine all sections
+        complete_report = '\n'.join(final_report)
 
         # Store the report
-        self.log_data["report"] = report
+        self.log_data["report"] = complete_report
 
-        return report
+        return complete_report
 
     def _organize_search_results(self, search_results: List[Dict[str, Any]]) -> str:
         """Organize and summarize search results for report generation"""

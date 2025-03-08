@@ -64,18 +64,24 @@ python src/search.py
 
 ```bash
 deep-research/
-├── src/
-│   ├── search.py
-│   ├── search_engine/
-|   |    ├── duckduckgo_search.py
-|   |    ├── bing_search.py
-|   |    └── search_test.py
-│   └── ai_provider/
-|        ├── ai_provider.py
-|        └── ollama_test.py
-├── requirements.txt
+├── LICENSE
+├── README.md
 ├── .env
-└── README.md
+├── .gitignore
+├── images
+│   ├── model_select.png
+│   └── questions.png
+├── requirements.txt
+├── results
+└── src
+    ├── ai_provider
+    │   ├── ai_provider.py
+    │   └── ollama_test.py
+    ├── search.py
+    └── search_engine
+        ├── bing_search.py
+        ├── duckduckgo_search.py
+        └── search_test.py
 ```
 
 ## AI Provider Support
