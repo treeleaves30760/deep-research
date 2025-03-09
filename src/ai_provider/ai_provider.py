@@ -79,7 +79,7 @@ class GeminiProvider(AIProvider):
 
 class ollamaProvider(AIProvider):
     def __init__(self, host: str = "http://localhost:11434"):
-        self.client = ollamaClient(base_url=host)
+        self.client = ollamaClient(host=host)
         self.available_models = self._get_available_models()
 
     def _get_available_models(self) -> Dict[str, str]:
