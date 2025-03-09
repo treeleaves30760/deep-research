@@ -11,3 +11,4 @@ html2text
 webdriver_manager 
 markdown
 rich
+ollama
