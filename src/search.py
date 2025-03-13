@@ -95,14 +95,14 @@ class DeepSearchAgent:
             f"[bold cyan]Generating initial questions for topic:[/] {topic}")
 
         prompt = f"""Given the topic '{topic}', generate 3 important questions that would help understand 
-        which specific aspect the user wants to research. Each question should have 3-4 multiple choice options.
+which specific aspect the user wants to research. Each question should have 3-4 multiple choice options.
         
-        Format example:
-        1. Question: What specific aspect of [topic] interests you most?
-           Options:
-           a) [specific area 1]
-           b) [specific area 2]
-           c) [specific area 3]
+Format example:
+1. Question: What specific aspect of [topic] interests you most?
+Options:
+a) [specific area 1]
+b) [specific area 2]
+c) [specific area 3]
         """
 
         response = self._call_llm(prompt)
@@ -210,9 +210,16 @@ class DeepSearchAgent:
         all_results = []
         current_keywords = keywords.copy()
 
+        # Calculate total number of searches based on breadth and depth
+        total_searches = len(current_keywords) * depth
+        console.print(
+            f"[bold magenta]Starting comprehensive research with {total_searches} total searches[/]")
+
         for iteration in range(depth):
             console.print(
-                f"[bold magenta]Search iteration {iteration+1}/{depth}[/]")
+                f"[bold magenta]Research iteration {iteration+1}/{depth}[/]")
+            console.print(
+                f"[dim]Current breadth: {len(current_keywords)} keywords[/dim]")
 
             # Search for each current keyword
             for i, keyword in enumerate(current_keywords):
@@ -228,7 +235,7 @@ class DeepSearchAgent:
                     search_query = f"{topic} {display_keyword}"
 
                 console.print(
-                    f"  [bold]Keyword {i+1}/{len(current_keywords)}:[/] {display_keyword}")
+                    f"  [bold]Researching {i+1}/{len(current_keywords)}:[/] {display_keyword}")
                 console.print(f"  [dim]Search query: {search_query}[/dim]")
 
                 with Progress(
@@ -237,7 +244,8 @@ class DeepSearchAgent:
                     transient=True,
                 ) as progress:
                     progress.add_task("searching", total=None)
-                    results = search(search_query, limit=3)
+                    # Increased limit for more comprehensive results
+                    results = search(search_query, limit=10)
 
                 if results['success']:
                     console.print(
@@ -279,7 +287,7 @@ class DeepSearchAgent:
 
             if iteration < depth - 1:  # Don't generate new keywords on last iteration
                 console.print(
-                    "[bold cyan]Generating refined keywords based on search results...[/]")
+                    "[bold cyan]Expanding research scope with refined keywords...[/]")
                 # Generate new keywords based on current search results
                 new_keywords = self._generate_refined_keywords(
                     topic, all_results, len(current_keywords))
@@ -487,15 +495,15 @@ class DeepSearchAgent:
         structure = self._extract_content_between_backticks(response)
         return structure
 
-    def generate_report(self, topic: str, focus_areas: List[str],
-                        search_results: List[Dict[str, Any]]) -> str:
+    def generate_report(self, topic: str, focus_areas: List[str], search_results: List[Dict[str, Any]]) -> str:
         """Generate comprehensive research report in stages"""
-        console.print("[bold cyan]Generating final research report...[/]")
+        console.print(
+            "[bold cyan]Generating comprehensive research report...[/]")
 
         # First, generate the report structure
         report_structure = self._generate_report_structure(topic)
 
-        # Organize search results by relevance
+        # Organize search results by relevance and topic areas
         content_summary = self._organize_search_results(search_results)
 
         # Parse the structure to identify all [Content Tag] locations
@@ -522,9 +530,15 @@ class DeepSearchAgent:
                 'content': current_section
             })
 
-        # Generate content for each section
+        # Generate content for each section with comprehensive context
         final_report = []
         previous_content = ""
+        research_context = {
+            'topic': topic,
+            'focus_areas': focus_areas,
+            'total_sources': len(search_results),
+            'key_findings': self._extract_key_findings(search_results)
+        }
 
         for section in sections:
             section_title = ' '.join(h.lstrip('#').strip()
@@ -532,21 +546,28 @@ class DeepSearchAgent:
             console.print(
                 f"[bold cyan]Generating content for section: {section_title}[/]")
 
-            prompt = f"""Write the content for the {section_title} section of the research report about '{topic}'.
+            prompt = f"""Write comprehensive content for the {section_title} section of the research report about '{topic}'.
 
-            Previous content generated:
+            Research Context:
+            - Topic: {research_context['topic']}
+            - Focus Areas: {', '.join(research_context['focus_areas'])}
+            - Total Sources: {research_context['total_sources']}
+            - Key Findings: {research_context['key_findings']}
+
+            Previous Content Generated:
             {previous_content}
 
-            Research data available:
+            Research Data Available:
             {content_summary}
-
-            Focus areas: {focus_areas}
 
             IMPORTANT: 
             1. Wrap your response in triple backticks (```). Only the content within the backticks will be used.
-            2. Write detailed, well-structured content for this section that flows naturally from the previous content.
-            3. Make it analytical and cite specific findings from the research data where relevant.
-            4. Do not include any meta-commentary or reasoning outside the backticks."""
+            2. Write detailed, well-structured content that integrates findings from multiple sources.
+            3. Make connections between different aspects of the research.
+            4. Include specific examples and data points from the research.
+            5. Maintain academic tone and proper citations.
+            6. Ensure content flows naturally from previous sections.
+            7. Do not include any meta-commentary or reasoning outside the backticks."""
 
             response = self._call_llm(prompt)
             section_content = self._extract_content_between_backticks(response)
@@ -562,10 +583,51 @@ class DeepSearchAgent:
         # Combine all sections
         complete_report = '\n'.join(final_report)
 
+        # Add executive summary at the beginning
+        executive_summary = self._generate_executive_summary(
+            topic, research_context, complete_report)
+        complete_report = f"# Executive Summary\n\n{executive_summary}\n\n{complete_report}"
+
         # Store the report
         self.log_data["report"] = complete_report
 
         return complete_report
+
+    def _extract_key_findings(self, search_results: List[Dict[str, Any]]) -> str:
+        """Extract key findings from search results"""
+        prompt = f"""Based on the following research results, identify the 5 most significant findings:
+
+        {self._organize_search_results(search_results)}
+
+        Format each finding as a concise statement. Focus on unique insights and important discoveries.
+        """
+
+        response = self._call_llm(prompt)
+        return self._extract_content_between_backticks(response)
+
+    def _generate_executive_summary(self, topic: str, research_context: Dict[str, Any], full_report: str) -> str:
+        """Generate an executive summary of the research"""
+        prompt = f"""Create a comprehensive executive summary for the research report about '{topic}'.
+
+        Research Context:
+        - Topic: {research_context['topic']}
+        - Focus Areas: {', '.join(research_context['focus_areas'])}
+        - Total Sources: {research_context['total_sources']}
+        - Key Findings: {research_context['key_findings']}
+
+        Full Report:
+        {full_report}
+
+        IMPORTANT:
+        1. Wrap your response in triple backticks (```). Only the content within the backticks will be used.
+        2. Provide a clear overview of the research scope and methodology.
+        3. Highlight the most significant findings and their implications.
+        4. Include key recommendations or conclusions.
+        5. Keep it concise but comprehensive (2-3 paragraphs).
+        6. Do not include any meta-commentary or reasoning outside the backticks."""
+
+        response = self._call_llm(prompt)
+        return self._extract_content_between_backticks(response)
 
     def _organize_search_results(self, search_results: List[Dict[str, Any]]) -> str:
         """Organize and summarize search results for report generation"""
@@ -700,24 +762,24 @@ def main():
 
         # Try again with a more structured format
         prompt = f"""Given the topic '{topic}', I need EXACTLY 3 important questions to understand which specific aspect the user wants to research.
-        
-        Please follow this EXACT format for each question:
-        
-        Question 1: [Question text]
-        Option a: [Option text]
-        Option b: [Option text]
-        Option c: [Option text]
-        
-        Question 2: [Question text]
-        Option a: [Option text]
-        Option b: [Option text]
-        Option c: [Option text]
-        
-        Question 3: [Question text]
-        Option a: [Option text]
-        Option b: [Option text]
-        Option c: [Option text]
-        """
+
+Important: Please follow this EXACT format for each question:
+
+Question 1: [Question text]
+Option a: [Option text]
+Option b: [Option text]
+Option c: [Option text]
+
+Question 2: [Question text]
+Option a: [Option text]
+Option b: [Option text]
+Option c: [Option text]
+
+Question 3: [Question text]
+Option a: [Option text]
+Option b: [Option text]
+Option c: [Option text]
+"""
 
         response = agent._call_llm(prompt)
         questions = agent._parse_questions(response)
