@@ -3,16 +3,15 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install Chrome for Selenium
-RUN apt-get update && apt-get install -y \
-  wget \
-  gnupg \
-  unzip \
-  && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-  && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
-  && apt-get update \
-  && apt-get install -y google-chrome-stable \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+  apt-get update && apt-get install -y wget gnupg unzip && \
+  wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+  echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list && \
+  apt-get update && apt-get install -y google-chrome-stable && \
+  apt-get clean && rm -rf /var/lib/apt/lists/*; \
+  else \
+  echo "Skipping google-chrome installation on non-amd64 architecture"; \
+  fi
 
 # Copy requirements first for better caching
 COPY requirements.txt .
