@@ -1,30 +1,67 @@
-# Deep Research
+# Deep Research: Fully Local Deep Search & Report Generation
 
-This is a project for Deep Research, we use the duckduckgo as search engine, and the firecrawl as the content scraper.
+Deep Research is a fully local deep search system that leverages DuckDuckGo for search and Firecrawl for content scraping. This repository is built to operate entirely on your local machine, ensuring privacy and complete control over your research data. With our innovative design, you can generate extensive, in-depth reports that can exceed 10,000 tokens in length!
 
-## Features
+## Key Features
 
-- Topic-based research with AI-generated questions
-- Interactive Q&A for focused searching
-- Intelligent search term generation
-- DuckDuckGo search integration
-- AI-powered comprehensive report generation
-- Support for multiple AI providers (Claude, OpenAI, Gemini, Ollama)
-- Docker support for easy deployment
-- GitHub Actions integration for CI/CD
+- **Fully Local Implementation:** No external servers required. Every component runs on your local machine.
+- **In-depth Research:** Topic-based search enhanced by AI-generated questions to guide your inquiry.
+- **Interactive Q&A:** Refine your search with an intuitive Q&A interface.
+- **Intelligent Search Term Generation:** Utilize local and AI-powered techniques to craft effective search queries.
+- **DuckDuckGo Integration:** Leverage the privacy and reliability of DuckDuckGo for your search needs.
+- **Extended Report Generation:** Produce detailed reports that can exceed 10K tokens, perfect for deep research projects.
+- **Multiple AI Provider Support:** Choose from local Ollama (no API key needed), Claude, OpenAI, or Gemini.
+- **Docker & CI/CD Ready:** Easy deployment with Docker and automated workflows with GitHub Actions.
 
-## Install
+## Installation & Usage
 
-### Option 1: Standard Installation
+Deep Research offers several ways to quickly get started, whether you prefer using Docker or running the application locally via Python. Choose from the following options:
 
-1. Clone the project
+### Use Pre-Built Image from Docker Hub
+
+The image is automatically built and pushed to Docker Hub via GitHub Actions. You can pull the latest pre-built image directly:
+
+```sh
+docker pull treeleaves30760/deep-research
+```
+
+Then run the container:
+
+```sh
+docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results treeleaves30760/deep-research
+```
+
+### Option A: Docker Quick Start
+
+1. Clone the repository:
 
 ```sh
 git clone https://github.com/treeleaves30760/deep-research.git
 cd deep-research
 ```
 
-2. Setup the environment
+2. **Using Docker Compose:** Build and run the application in one step:
+
+```sh
+docker-compose up --build
+```
+
+3. **Alternatively, using a pre-built Docker image:** (Ensure you have created a `.env` file if using remote AI providers)
+
+```sh
+docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results deep-research
+```
+
+### Option B: Local Python Installation
+
+1. Clone the repository:
+
+```sh
+git clone https://github.com/treeleaves30760/deep-research.git
+cd deep-research
+```
+
+2. Set up your Python environment:
 
 ```sh
 conda create -n deep_research python==3.11.10 -y
@@ -32,123 +69,93 @@ conda activate deep_research
 pip install -r requirements.txt
 ```
 
-3. Configure API Keys
+3. Launch the application:
 
-Create a `.env` file in the project root with your AI provider API keys
-
-> ![NOTE]
-> If you are going to use ollama, then this step is not needed
-
-```env
-CLAUDE_API_KEY=your_claude_api_key
-OPENAI_API_KEY=your_openai_api_key
-GEMINI_API_KEY=your_gemini_api_key
+```sh
+python src/search.py
 ```
 
-### Option 2: Docker Installation
+### Option C: Docker Build Locally
 
-1. Clone the project
+1. Clone the repository:
 
 ```sh
 git clone https://github.com/treeleaves30760/deep-research.git
 cd deep-research
 ```
 
-2. Create a `.env` file (as described above)
-
-3. Build and run with Docker Compose
+2. Build the Docker image:
 
 ```sh
-docker-compose up --build
+docker build -t deep-research .
 ```
 
-Alternatively, you can pull the pre-built image from Docker Hub:
+3. Run the Docker container:
 
 ```sh
-# Create .env file first
-docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results treeleaves30760/deep-research
+docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results deep-research
 ```
 
-## Usage
-
-1. Basic Usage
-
-```sh
-python src/search.py  # If using standard installation
-# OR
-docker-compose up     # If using Docker
-```
-
-2. Follow the interactive prompts:
-   - Enter your research topic
-   - Answer the AI-generated questions
-   - Answer the breadth and depth of the search
-   - Wait for the search and report generation
-   - Review the comprehensive report
-
-![Model Select](./images/model_select.png)
-
-![QA](./images/questions.png)
+Once running, follow the interactive prompts:
+- Enter your research topic.
+- Answer AI-generated questions to tailor your research.
+- Define the breadth and depth of the search.
+- Wait as the system scrapes content and generates a comprehensive report that can exceed 10,000 tokens.
 
 ## Project Structure
 
-```bash
+```
 deep-research/
 ├── LICENSE
-├── README.md
+├── README.md                # This file
 ├── .env.example
 ├── .gitignore
-├── Dockerfile            # Docker configuration
-├── docker-compose.yml    # Docker Compose configuration
+├── Dockerfile               # Docker configuration
+├── docker-compose.yml       # Docker Compose configuration
 ├── .github/
 │   └── workflows/
-│       └── docker-build.yml  # GitHub Actions workflow
-├── images
+│       └── docker-build.yml # GitHub Actions workflow
+├── images/
 │   ├── model_select.png
 │   └── questions.png
 ├── requirements.txt
-├── results
-└── src
-    ├── ai_provider
+├── results/                 # Generated reports
+└── src/
+    ├── ai_provider/
     │   ├── ai_provider.py
-    │   └── ollama_test.py
+    │   └── ollama_test.py  # Local provider implementation
     ├── search.py
-    ├── content_extract
+    ├── content_extract/
     │   └── website_to_markdown.py
-    └── search_engine
+    └── search_engine/
         ├── bing_search.py
         ├── duckduckgo_search.py
         └── search_test.py
 ```
 
-## AI Provider Support
+## AI Provider Options
 
-The system supports multiple AI providers:
+Deep Research supports a variety of AI providers:
 
-1. Claude (Default)
-   - Models: claude-3-opus, claude-3-sonnet, claude-3-haiku
-   - Requires: CLAUDE_API_KEY
-
-2. OpenAI
-   - Models: gpt-3.5-turbo, gpt-4
-   - Requires: OPENAI_API_KEY
-
-3. Gemini
-   - Models: gemini-pro
-   - Requires: GEMINI_API_KEY
-
-4. Ollama (Local)
-   - Models: Based on local installation
-   - No API key required
+- **Ollama (Local):** Ideal for a completely local environment — no API key required.
+- **Claude (Default):**
+  - Models: claude-3-opus, claude-3-sonnet, claude-3-haiku.
+  - Requires: CLAUDE_API_KEY.
+- **OpenAI:**
+  - Models: gpt-3.5-turbo, gpt-4.
+  - Requires: OPENAI_API_KEY.
+- **Gemini:**
+  - Model: gemini-pro.
+  - Requires: GEMINI_API_KEY.
 
 ## Customization
 
-You can customize the search behavior by modifying these parameters in `src/search.py`:
+Adjust system behavior in `src/search.py` including:
 
-- Number of questions generated
-- Search result limits
-- AI provider and model selection
-- Report format and structure
+- Number of AI-generated questions.
+- Search result limits.
+- Choice of AI provider and model.
+- Report format — enabling detailed reports exceeding 10K tokens.
 
 ## Docker Deployment
 
@@ -164,13 +171,12 @@ docker build -t deep-research .
 docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results deep-research
 ```
 
-### Environment Variables
+### Managing Environment Variables
 
-When running with Docker, you can pass environment variables in several ways:
-
-1. Using a `.env` file with docker-compose
-2. Using the `--env-file` flag with docker run
-3. Directly with `-e` flag:
+Pass environment variables via:
+- A `.env` file (with docker-compose)
+- The `--env-file` flag with Docker run
+- Directly using the `-e` flag, for example:
 
 ```sh
 docker run -it -e CLAUDE_API_KEY=your_key -e OPENAI_API_KEY=your_key -v $(pwd)/results:/app/results deep-research
@@ -178,24 +184,39 @@ docker run -it -e CLAUDE_API_KEY=your_key -e OPENAI_API_KEY=your_key -v $(pwd)/r
 
 ## GitHub Actions
 
-This repository includes a GitHub Actions workflow that automatically builds and pushes the Docker image to Docker Hub whenever changes are pushed to the main branch.
+Our GitHub Actions workflow automatically builds and pushes the Docker image to Docker Hub upon commits to the main branch. To set this up:
 
-To use this feature:
-
-1. Fork the repository
-2. Add the following secrets to your GitHub repository:
-   - `DOCKER_HUB_USERNAME`: Your Docker Hub username
-   - `DOCKER_HUB_TOKEN`: Your Docker Hub access token (not your password)
-3. Push changes to the main branch to trigger the workflow
+1. Fork the repository.
+2. Configure the following secrets in your GitHub repository:
+   - DOCKER_HUB_USERNAME
+   - DOCKER_HUB_TOKEN (use an access token, not your password)
+3. Push changes to trigger the workflow.
 
 ## Contributing
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Contributions are welcome! To contribute:
+
+1. Fork the repository.
+2. Create a feature branch:
+
+```sh
+git checkout -b feature/your-feature
+```
+
+3. Commit your changes:
+
+```sh
+git commit -m 'Add new feature'
+```
+
+4. Push your branch:
+
+```sh
+git push origin feature/your-feature
+```
+
+5. Open a pull request for review.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License. See the LICENSE file for details.
