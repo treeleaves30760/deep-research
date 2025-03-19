@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  deep-research:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./results:/app/results
+      - ./search_results:/app/search_results
+    env_file:
+      - .env
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    # Command will be overridden by ENTRYPOINT in Dockerfile
+    # Override entrypoint if needed: entrypoint: ["sh", "-c", "sleep infinity"] 
