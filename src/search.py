@@ -96,66 +96,113 @@ class DeepSearchAgent:
 
         prompt = f"""Given the topic '{topic}', generate 3 important questions that would help understand 
 which specific aspect the user wants to research. Each question should have 3-4 multiple choice options.
-        
-Format example:
-1. Question: What specific aspect of [topic] interests you most?
-Options:
+
+IMPORTANT: Format your response using XML-like tags as follows:
+
+<question_1>What specific aspect of [topic] interests you most?</question_1>
+<options_1>
 a) [specific area 1]
 b) [specific area 2]
 c) [specific area 3]
-        """
+</options_1>
+
+<question_2>What is your primary goal for researching [topic]?</question_2>
+<options_2>
+a) [goal 1]
+b) [goal 2]
+c) [goal 3]
+</options_2>
+
+<question_3>What depth of information are you looking for?</question_3>
+<options_3>
+a) [depth level 1]
+b) [depth level 2]
+c) [depth level 3]
+</options_3>
+
+Make sure to:
+1. Use exactly 3 questions
+2. Each question should have 3-4 options
+3. Use the exact tag format shown above
+4. Keep questions focused and specific to the topic
+5. Make options clear and distinct"""
 
         response = self._call_llm(prompt)
         return self._parse_questions(response)
 
     def _parse_questions(self, response: str) -> List[Dict[str, Any]]:
-        """Parse LLM response into structured question format - optimized for numbered questions with lettered options"""
+        """Parse LLM response into structured question format using XML-like tags"""
         questions = []
-        current_question = None
-        current_options = []
 
-        # Remove any thinking or system outputs that might be enclosed in angle brackets
-        response = re.sub(r'<.*?>.*?</.*?>', '', response, flags=re.DOTALL)
+        # Pattern to match question and options blocks
+        pattern = r'<question_(\d+)>(.*?)</question_\1>\s*<options_\1>\s*(.*?)\s*</options_\1>'
 
-        # Process each line
-        for line in response.strip().split('\n'):
-            line = line.strip()
-            if not line:  # Skip empty lines
-                continue
+        # Find all matches
+        matches = re.finditer(pattern, response, re.DOTALL)
 
-            # Match numbered questions: "1. Question: What specific..."
-            question_match = re.match(
-                r'^\d+\.\s*(?:Question:?\s*)?(.+)$', line)
-            if question_match:
-                # If we already have a question with options, add it to results
-                if current_question and current_options:
-                    questions.append({
-                        'question': current_question,
-                        'options': current_options
-                    })
-                    current_options = []
+        for match in matches:
+            question_number = match.group(1)
+            question_text = match.group(2).strip()
+            options_text = match.group(3).strip()
 
-                # Start a new question
-                current_question = question_match.group(1).strip()
-                continue
+            # Parse options
+            options = []
+            for line in options_text.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                # Match option pattern: a) text or a. text
+                option_match = re.match(r'^[a-z][\)\.:]\s*(.+)$', line)
+                if option_match:
+                    options.append(option_match.group(1).strip())
 
-            # Match "Options:" header - just skip it
-            if line.lower() == 'options:':
-                continue
+            if question_text and options:
+                questions.append({
+                    'question': question_text,
+                    'options': options
+                })
 
-            # Match lettered options: "a) Option text" or "a. Option text"
-            option_match = re.match(r'^([a-z][\)\.:])\s*(.+)$', line)
-            if option_match and current_question:
-                option_text = option_match.group(2).strip()
-                current_options.append(option_text)
-                continue
+        # If no matches found with tags, try the old parsing method as fallback
+        if not questions:
+            console.print(
+                "[yellow]No tagged questions found, falling back to basic parsing...[/]")
+            current_question = None
+            current_options = []
 
-        # Add the last question if we have one
-        if current_question and current_options:
-            questions.append({
-                'question': current_question,
-                'options': current_options
-            })
+            for line in response.strip().split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Match numbered questions
+                question_match = re.match(
+                    r'^\d+\.\s*(?:Question:?\s*)?(.+)$', line)
+                if question_match:
+                    if current_question and current_options:
+                        questions.append({
+                            'question': current_question,
+                            'options': current_options
+                        })
+                        current_options = []
+                    current_question = question_match.group(1).strip()
+                    continue
+
+                # Skip "Options:" header
+                if line.lower() == 'options:':
+                    continue
+
+                # Match lettered options
+                option_match = re.match(r'^([a-z][\)\.:])\s*(.+)$', line)
+                if option_match and current_question:
+                    option_text = option_match.group(2).strip()
+                    current_options.append(option_text)
+
+            # Add the last question if we have one
+            if current_question and current_options:
+                questions.append({
+                    'question': current_question,
+                    'options': current_options
+                })
 
         return questions
 
