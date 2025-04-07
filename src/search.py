@@ -16,6 +16,9 @@ import re
 # Import the WebsiteToMarkdown converter
 from content_extract.website_to_markdown import WebsiteToMarkdown
 
+# Import the content processing components
+from content_processing import WebContent, ContentQualityChecker, ContentProcessor, ContentSummarizer
+
 
 # Initialize Rich console
 console = Console()
@@ -43,6 +46,36 @@ class DeepSearchAgent:
 
         # Initialize WebsiteToMarkdown converter
         self.markdown_converter = WebsiteToMarkdown(headless=True)
+
+        # Initialize content processing components
+        self.content_processor = ContentProcessor()
+        self.content_quality_checker = ContentQualityChecker()
+
+        # Initialize content summarizer if LLM is available
+        self.content_summarizer = None
+        if ai_provider != "ollama":
+            # Create a mock LLM client for the summarizer
+            self.content_summarizer = ContentSummarizer(
+                self._create_llm_client())
+
+    def _create_llm_client(self):
+        """Create a mock LLM client for the content summarizer"""
+        class MockLLMClient:
+            def __init__(self, agent):
+                self.agent = agent
+
+            def generate_summary(self, content, summary_type="concise"):
+                """Generate a summary using the agent's LLM"""
+                prompt = f"""Summarize the following content in a {summary_type} way:
+
+                {content[:2000]}  # Limit content length to avoid token limits
+                
+                Provide a {summary_type} summary that captures the main points.
+                """
+
+                return self.agent._call_llm(prompt)
+
+        return MockLLMClient(self)
 
     def _log_llm_interaction(self, prompt: str, response: str):
         """Log LLM interaction for detailed reporting"""
@@ -405,7 +438,35 @@ Make sure to:
                             use_readability=True  # Use readability for better extraction
                         )
 
-                        # Store the extracted content
+                        # Process the content using our new content processing system
+                        web_content = self.content_processor.process_content(
+                            url=url,
+                            raw_content=markdown_content,
+                            title=result['title'],
+                            metadata={"source": "web", "topic": topic,
+                                      "keyword": keyword, "iteration": iteration + 1}
+                        )
+
+                        # Check content quality
+                        quality_metrics = self.content_quality_checker.check_quality(
+                            web_content)
+                        web_content.quality_metrics = quality_metrics
+
+                        # Generate summary if summarizer is available
+                        if self.content_summarizer:
+                            try:
+                                summary = self.content_summarizer.summarize_content(
+                                    web_content.content,
+                                    summary_type="concise"
+                                )
+                                web_content.update_summary(summary, "concise")
+                                console.print(
+                                    f"      [green]Generated summary (length: {len(summary)} chars)[/green]")
+                            except Exception as e:
+                                console.print(
+                                    f"      [yellow]Error generating summary: {str(e)}[/yellow]")
+
+                        # Store the processed content
                         self.log_data["webpage_contents"].append({
                             "url": url,
                             "title": result['title'],
@@ -413,14 +474,18 @@ Make sure to:
                             "keyword": keyword,
                             "iteration": iteration + 1,
                             "markdown": markdown_content,
+                            "processed_content": web_content.to_dict(),
                             "timestamp": datetime.datetime.now().isoformat()
                         })
 
-                        # Update the search result to include the markdown content
+                        # Update the search result to include the processed content
                         result['full_markdown'] = markdown_content
+                        result['processed_content'] = web_content.to_dict()
 
                         console.print(
-                            f"      [green]Successfully extracted content (length: {len(markdown_content)} chars)[/green]")
+                            f"      [green]Successfully processed content (length: {len(markdown_content)} chars)[/green]")
+                        console.print(
+                            f"      [dim]Quality score: {quality_metrics.get('overall_score', 'N/A')}[/dim]")
 
                     except Exception as e:
                         console.print(
@@ -699,9 +764,29 @@ Make sure to:
             summary.append(f"Source {i}:")
             summary.append(f"Title: {result['title']}")
 
-            # Use the full extracted markdown if available
-            if 'full_markdown' in result:
-                # Limit to a reasonable size for the prompt
+            # Use the processed content if available
+            if 'processed_content' in result:
+                processed = result['processed_content']
+                summary.append(f"URL: {processed['url']}")
+
+                # Add summary if available
+                if processed.get('summary'):
+                    summary.append(f"Summary: {processed['summary']}")
+
+                # Add quality metrics if available
+                if processed.get('quality_metrics'):
+                    metrics = processed['quality_metrics']
+                    summary.append(
+                        f"Quality Score: {metrics.get('overall_score', 'N/A')}")
+
+                # Add content (limited to a reasonable size)
+                content = processed.get('content', '')
+                if content:
+                    content = content[:2000] + \
+                        "..." if len(content) > 2000 else content
+                    summary.append(f"Content: {content}\n")
+            # Fall back to full markdown if available
+            elif 'full_markdown' in result:
                 content = result['full_markdown'][:2000] + "..." if len(
                     result['full_markdown']) > 2000 else result['full_markdown']
                 summary.append(f"Content: {content}\n")
@@ -743,10 +828,62 @@ Make sure to:
                 with open(webpages_dir / filename, "w") as f:
                     f.write(webpage["markdown"])
 
+                # Save processed content as JSON if available
+                if "processed_content" in webpage:
+                    json_filename = f"{i+1:02d}_{safe_title}_{url_hash}.json"
+                    with open(webpages_dir / json_filename, "w") as f:
+                        json.dump(webpage["processed_content"], f, indent=2)
+
         # Save all logs to JSON file
         log_path = output_path / "search_logs.json"
         with open(log_path, "w") as f:
             json.dump(self.log_data, f, indent=2)
+
+        # Save content quality report
+        quality_report_path = output_path / "content_quality_report.md"
+        with open(quality_report_path, "w") as f:
+            f.write(f"# Content Quality Report: {topic}\n\n")
+            f.write(
+                f"*Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+
+            # Collect all processed content with quality metrics
+            quality_data = []
+            for webpage in self.log_data["webpage_contents"]:
+                if "processed_content" in webpage and "quality_metrics" in webpage["processed_content"]:
+                    quality_data.append({
+                        "url": webpage["url"],
+                        "title": webpage["title"],
+                        "quality_metrics": webpage["processed_content"]["quality_metrics"],
+                        "summary": webpage["processed_content"].get("summary", "No summary available")
+                    })
+
+            # Sort by quality score (descending)
+            quality_data.sort(key=lambda x: x["quality_metrics"].get(
+                "overall_score", 0), reverse=True)
+
+            # Write quality report
+            f.write("## Content Quality Summary\n\n")
+            f.write(f"Total processed content: {len(quality_data)}\n\n")
+
+            f.write("## Content by Quality Score\n\n")
+            for i, item in enumerate(quality_data, 1):
+                f.write(f"### {i}. {item['title']}\n\n")
+                f.write(f"**URL:** {item['url']}\n\n")
+                f.write(
+                    f"**Quality Score:** {item['quality_metrics'].get('overall_score', 'N/A')}\n\n")
+
+                # Add summary if available
+                if item.get("summary"):
+                    f.write("**Summary:**\n\n")
+                    f.write(f"{item['summary']}\n\n")
+
+                # Add detailed metrics
+                f.write("**Detailed Metrics:**\n\n")
+                for metric, value in item["quality_metrics"].items():
+                    if metric != "overall_score":
+                        f.write(f"- {metric}: {value}\n")
+
+                f.write("\n---\n\n")
 
         console.print(f"[bold green]Results saved to:[/] {output_path}")
         return str(output_path)
@@ -802,78 +939,13 @@ def main():
     console.print("\n[bold cyan]Focusing your research...[/]")
     questions = agent.generate_initial_questions(topic)
 
-    # Check if we got valid questions
-    if not questions or not any(q.get('question') for q in questions):
-        console.print(
-            "[yellow]Could not parse questions from LLM response. Let's try again with a more structured format...[/]")
-
-        # Try again with a more structured format
-        prompt = f"""Given the topic '{topic}', I need EXACTLY 3 important questions to understand which specific aspect the user wants to research.
-
-Important: Please follow this EXACT format for each question:
-
-Question 1: [Question text]
-Option a: [Option text]
-Option b: [Option text]
-Option c: [Option text]
-
-Question 2: [Question text]
-Option a: [Option text]
-Option b: [Option text]
-Option c: [Option text]
-
-Question 3: [Question text]
-Option a: [Option text]
-Option b: [Option text]
-Option c: [Option text]
-"""
-
-        response = agent._call_llm(prompt)
-        questions = agent._parse_questions(response)
-
-        if not questions or not any(q.get('question') for q in questions):
-            console.print(
-                "[yellow]Still having trouble parsing questions. Let's create some basic questions manually.[/]")
-
-            # Create manual fallback questions
-            questions = [
-                {
-                    'question': f"What specific aspect of {topic} interests you most?",
-                    'options': ["General overview", "Recent developments", "Practical applications", "Technical details"]
-                },
-                {
-                    'question': f"What is your primary goal for researching {topic}?",
-                    'options': ["Learning basics", "Solving a problem", "Academic research", "Personal interest"]
-                },
-                {
-                    'question': "What depth of information are you looking for?",
-                    'options': ["Beginner-friendly introduction", "Intermediate overview", "Advanced technical details", "Expert analysis"]
-                }
-            ]
-
+    # Display questions and get answers
     answers = []
-    for i, q in enumerate(questions):
-        console.print(Panel(f"[bold]{i+1}. {q['question']}[/]", expand=False))
-
-        # Make sure we have options to display
-        if not q['options']:
-            console.print(
-                "[yellow]No options found for this question. Please enter your answer directly.[/]")
-            user_answer = input("Your answer: ")
-            answers.append(user_answer)
-
-            # Store user answers
-            agent.log_data["answers"].append({
-                "question": q['question'],
-                "options": [],
-                "selected": user_answer
-            })
-            continue
-
-        # Display options
-        console.print("Options:")
+    for i, q in enumerate(questions, 1):
+        console.print(f"\n[bold cyan]Question {i}:[/] {q['question']}")
+        console.print("\n[bold]Options:[/]")
         for j, option in enumerate(q['options']):
-            console.print(f"   [bold]{chr(97+j)})[/] {option}")
+            console.print(f"  {chr(97+j)}. {option}")
 
         # Get and validate user input
         while True:
@@ -918,6 +990,21 @@ Option c: [Option text]
     # Ask if the user wants to extract webpage content
     extract_content = input(
         "Extract content from webpages? (y/n, default: y): ").strip().lower() != 'n'
+
+    # Ask if the user wants to generate summaries (only if LLM is available)
+    generate_summaries = False
+    if agent.content_summarizer:
+        generate_summaries = input(
+            "Generate content summaries? (y/n, default: y): ").strip().lower() != 'n'
+        if generate_summaries:
+            console.print(
+                "[green]Content summaries will be generated for each webpage.[/]")
+        else:
+            console.print(
+                "[yellow]Content summaries will not be generated.[/]")
+    else:
+        console.print(
+            "[yellow]Content summaries cannot be generated with the current LLM provider.[/]")
 
     # Generate initial keywords and perform deep search
     console.print("\n[bold cyan]Beginning research process...[/]")
