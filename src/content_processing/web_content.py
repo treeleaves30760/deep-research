@@ -115,7 +115,8 @@ class WebContent:
             'timestamp': self.timestamp.isoformat(),
             'last_updated': self.last_updated.isoformat(),
             'summary': self.summary,
-            'summary_type': self.summary_type
+            'summary_type': self.summary_type,
+            'quality_metrics': self.quality_metrics
         }
 
     @classmethod
@@ -129,7 +130,7 @@ class WebContent:
         Returns:
             WebContent object
         """
-        return cls(
+        content = cls(
             url=data['url'],
             content=data['content'],
             title=data.get('title'),
@@ -140,6 +141,12 @@ class WebContent:
             summary=data.get('summary'),
             summary_type=data.get('summary_type')
         )
+
+        # Set quality metrics if available
+        if 'quality_metrics' in data:
+            content.quality_metrics = data['quality_metrics']
+
+        return content
 
     def update_embeddings(self, embeddings: List[float]) -> None:
         """Update content embeddings.

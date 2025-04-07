@@ -45,7 +45,7 @@ class ContentQualityChecker:
             metrics['uniqueness'] = self._check_uniqueness(content)
 
             # Calculate overall quality score
-            metrics['overall_quality'] = sum(metrics.values()) / len(metrics)
+            metrics['overall_score'] = sum(metrics.values()) / len(metrics)
 
         return metrics
 

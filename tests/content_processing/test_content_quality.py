@@ -61,7 +61,7 @@ class TestContentQualityChecker(unittest.TestCase):
         self.assertIn('freshness', metrics)
         self.assertIn('reliability', metrics)
         self.assertIn('uniqueness', metrics)
-        self.assertIn('overall_quality', metrics)
+        self.assertIn('overall_score', metrics)
 
         # Check that metrics are within expected range
         for metric in metrics.values():
