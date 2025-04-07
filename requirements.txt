@@ -12,3 +12,4 @@ webdriver_manager
 markdown
 rich
 ollama
+tiktoken
