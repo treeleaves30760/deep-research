@@ -25,10 +25,11 @@ console = Console()
 
 
 class DeepSearchAgent:
-    def __init__(self, ai_provider: str = "ollama", model: str = "deepseek-r1"):
+    def __init__(self, ai_provider: str = "ollama", model: str = "deepseek-r1", ollama_host: str = None):
         load_dotenv()
         self.ai_provider = ai_provider
         self.model = model
+        self.ollama_host = ollama_host
         if ai_provider != "ollama":
             self.api_key = os.getenv(f"{ai_provider.upper()}_API_KEY")
         else:
@@ -112,7 +113,11 @@ class DeepSearchAgent:
 
             # Call chat with or without api_key based on provider
             if self.ai_provider == "ollama":
-                response = chat(prompt, self.ai_provider, self.model)
+                if self.ollama_host:
+                    response = chat(prompt, self.ai_provider,
+                                    self.model, host=self.ollama_host)
+                else:
+                    response = chat(prompt, self.ai_provider, self.model)
             else:
                 response = chat(prompt, self.ai_provider,
                                 self.model, api_key=self.api_key)
@@ -178,16 +183,38 @@ Make sure to:
             question_text = match.group(2).strip()
             options_text = match.group(3).strip()
 
-            # Parse options
+            # Parse options - improved to handle multi-line options
             options = []
-            for line in options_text.split('\n'):
-                line = line.strip()
-                if not line:
+            # First split by lines that start with a letter followed by ) or .
+            option_blocks = re.split(
+                r'(?:\r?\n|\r)(?=[a-z][\)\.:]\s+)', options_text)
+
+            for block in option_blocks:
+                block = block.strip()
+                if not block:
                     continue
+
                 # Match option pattern: a) text or a. text
-                option_match = re.match(r'^[a-z][\)\.:]\s*(.+)$', line)
+                option_match = re.match(
+                    r'^([a-z][\)\.:]\s*)(.+)$', block, re.DOTALL)
                 if option_match:
-                    options.append(option_match.group(1).strip())
+                    # Get everything after the option letter, joining any multi-line content
+                    option_text = option_match.group(2).strip()
+                    # Join multiple lines and normalize whitespace
+                    option_text = ' '.join([line.strip()
+                                           for line in option_text.split('\n')])
+                    options.append(option_text)
+
+            # Fallback for simpler line by line parsing if regex didn't work
+            if not options:
+                for line in options_text.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # Match option pattern: a) text or a. text
+                    option_match = re.match(r'^[a-z][\)\.:]\s*(.+)$', line)
+                    if option_match:
+                        options.append(option_match.group(1).strip())
 
             if question_text and options:
                 questions.append({
