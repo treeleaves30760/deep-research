@@ -220,3 +220,47 @@ git push origin feature/your-feature
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
+
+## Web Interface
+
+You can now use DeepSearch with a user-friendly web interface powered by Gradio. There are two ways to access it:
+
+### Run with Docker (Recommended)
+
+1. Clone the repository
+2. Create a `.env` file based on `.env.example` and add your API keys
+3. Run the Docker container:
+
+```bash
+docker-compose up --build
+```
+
+4. Open your browser and navigate to `http://localhost:7860`
+
+#### Connecting to Ollama Outside Docker
+
+If you're running Ollama on your host machine (outside of Docker), the Docker container needs to be configured to connect to it. This is handled automatically by setting the `OLLAMA_HOST` environment variable to `host.docker.internal:11434` in the Dockerfile.
+
+You can override this value in your `.env` file or by setting the environment variable directly:
+
+```bash
+# In .env file
+OLLAMA_HOST=host.docker.internal:11434  # For Mac/Windows
+# OR
+OLLAMA_HOST=172.17.0.1:11434  # For Linux (Docker bridge network)
+```
+
+In the web interface, you can also change the Ollama host in the "Initialize" tab before connecting.
+
+### Run Locally
+
+1. Install the dependencies: `pip install -r requirements.txt`
+2. Run the web interface: `python src/gradio_interface.py`
+3. Open your browser and navigate to `http://localhost:7860`
+
+The web interface provides a step-by-step workflow:
+
+1. **Initialize the Agent**: Select your preferred AI provider and model
+2. **Define Research Topic**: Enter your research topic and answer the focusing questions
+3. **Perform Research**: Configure research parameters and start the research process
+4. **Generate Report**: Get a comprehensive report and download the results

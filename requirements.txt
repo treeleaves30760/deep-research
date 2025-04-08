@@ -13,3 +13,4 @@ markdown
 rich
 ollama
 tiktoken
+gradio==5.23.3

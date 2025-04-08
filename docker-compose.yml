@@ -8,6 +8,8 @@ services:
       - ./search_results:/app/search_results
     env_file:
       - .env
+    ports:
+      - "7860:7860"
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     # Command will be overridden by ENTRYPOINT in Dockerfile

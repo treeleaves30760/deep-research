@@ -27,6 +27,10 @@ RUN mkdir -p results search_results
 ENV CLAUDE_API_KEY=""
 ENV OPENAI_API_KEY=""
 ENV GEMINI_API_KEY=""
+ENV OLLAMA_HOST="host.docker.internal:11434"
 
-# Run the application
-ENTRYPOINT ["python", "src/search.py"] 
+# Expose the port for Gradio
+EXPOSE 7860
+
+# Run the Gradio web interface
+CMD ["python", "src/gradio_interface.py"] 
