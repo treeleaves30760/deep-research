@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
-from ai_provider.ai_provider import chat
-from search_engine.duckduckgo_search import search
+from src.ai_provider.ai_provider import chat
+from src.search_engine.duckduckgo_search import search
 import os
 import json
 import datetime
@@ -14,10 +14,10 @@ from pathlib import Path
 import re
 
 # Import the WebsiteToMarkdown converter
-from content_extract.website_to_markdown import WebsiteToMarkdown
+from src.content_extract.website_to_markdown import WebsiteToMarkdown
 
 # Import the content processing components
-from content_processing import WebContent, ContentQualityChecker, ContentProcessor, ContentSummarizer
+from src.content_processing import WebContent, ContentQualityChecker, ContentProcessor, ContentSummarizer
 
 
 # Initialize Rich console

@@ -33,4 +33,4 @@ ENV OLLAMA_HOST="host.docker.internal:11434"
 EXPOSE 7860
 
 # Run the Gradio web interface
-CMD ["python", "src/gradio_interface.py"] 
+CMD ["python", "src/gradio_interface/main.py"] 
