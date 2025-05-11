@@ -61,17 +61,19 @@ class ClaudeProvider(AIProvider):
 
 class GeminiProvider(AIProvider):
     def __init__(self, api_key: str):
-        genai.configure(api_key=api_key)
+        self.client = genai.Client(api_key=api_key)
         self.available_models = {
-            "gemini-pro": "gemini-1.5-pro-002",
-            "gemini-pro-vision": "gemini-1.5-pro-002"
+            "gemini-flash": "models/gemini-2.5-flash-preview-04-17",
+            "gemini-pro": "gemini-2.5-pro-exp-03-25",
         }
 
-    def chat(self, message: str, model: str = "gemini-pro") -> str:
+    def chat(self, message: str, model: str = "gemini-2.5-flash-preview-04-17") -> str:
         try:
-            model_version = self.available_models.get(model, model)
-            model = genai.GenerativeModel(model_version)
-            response = model.generate_content(message)
+            model_version = self.available_models.get(model, f"models/{model}")
+            response = self.client.models.generate_content(
+                model=model_version,
+                contents=message
+            )
             return response.text
         except Exception as e:
             return f"Gemini Error: {str(e)}"
@@ -166,7 +168,7 @@ if __name__ == "__main__":
         message=message,
         provider_type="gemini",
         model="gemini-pro",
-        api_key=os.getenv("GOOGLE_API_KEY")
+        api_key=os.getenv("GEMINI_API_KEY")
     )
     print("Gemini Response:", gemini_response)
 

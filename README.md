@@ -28,7 +28,7 @@ docker pull treeleaves30760/deep-research
 Then run the container:
 
 ```sh
-docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results treeleaves30760/deep-research
+docker run -it --env-file .env -p 7860:7860 -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results treeleaves30760/deep-research
 ```
 
 ### Option A: Docker Quick Start
@@ -49,7 +49,7 @@ docker-compose up --build
 3. **Alternatively, using a pre-built Docker image:** (Ensure you have created a `.env` file if using remote AI providers)
 
 ```sh
-docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results deep-research
+docker run -it --env-file .env -p 7860:7860 -v $(pwd)/results:/app/results -v $(pwd)/search_results:/app/search_results treeleaves30760/deep-research
 ```
 
 ### Option B: Local Python Installation
@@ -97,6 +97,7 @@ docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_r
 ```
 
 Once running, follow the interactive prompts:
+
 - Enter your research topic.
 - Answer AI-generated questions to tailor your research.
 - Define the breadth and depth of the search.
@@ -174,6 +175,7 @@ docker run -it --env-file .env -v $(pwd)/results:/app/results -v $(pwd)/search_r
 ### Managing Environment Variables
 
 Pass environment variables via:
+
 - A `.env` file (with docker-compose)
 - The `--env-file` flag with Docker run
 - Directly using the `-e` flag, for example:

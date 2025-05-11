@@ -946,10 +946,10 @@ def main():
 
     # Default models per provider
     default_models = {
-        "ollama": "deepseek-r1",
-        "openai": "gpt-4o",
-        "claude": "claude-3-sonnet",
-        "gemini": "gemini"
+        "ollama": "gemma3:latest",
+        "openai": "gpt-4.1",
+        "claude": "claude-3.5-sonnet",
+        "gemini": "gemini-2.5-flash-preview-04-17"
     }
 
     model = input(

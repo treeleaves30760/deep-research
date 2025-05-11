@@ -43,7 +43,7 @@ DEFAULT_MODELS = {
     "ollama": "deepseek-r1",
     "openai": "gpt-4o",
     "claude": "claude-3-sonnet",
-    "gemini": "gemini"
+    "gemini": "gemini-2.5-flash-preview-04-17"
 }
 
 # Default Ollama host - will be used when in Docker
