@@ -1,24 +1,41 @@
-from typing import List, Dict, Any, Optional
-from src.ai_provider.ai_provider import chat
-from src.search_engine.duckduckgo_search import search
+from pathlib import Path
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.markdown import Markdown
+from rich.syntax import Syntax
+from rich.panel import Panel
+from rich.console import Console
+from dotenv import load_dotenv
 import os
+import sys
 import json
 import datetime
-from dotenv import load_dotenv
-from rich.console import Console
-from rich.panel import Panel
-from rich.syntax import Syntax
-from rich.markdown import Markdown
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from pathlib import Path
 import re
+from typing import List, Dict, Any, Optional
 
-# Import the WebsiteToMarkdown converter
-from src.content_extract.website_to_markdown import WebsiteToMarkdown
+# 添加專案根目錄到 Python 路徑
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# Import the content processing components
-from src.content_processing import WebContent, ContentQualityChecker, ContentProcessor, ContentSummarizer
+# 現在導入模組
 
+try:
+    from src.ai_provider.ai_provider import chat
+    from src.search_engine.duckduckgo_search import search
+    from src.content_extract.website_to_markdown import WebsiteToMarkdown
+    from src.content_processing import WebContent, ContentQualityChecker, ContentProcessor, ContentSummarizer
+except ImportError:
+    # 如果從 src 目錄內部執行，嘗試不帶 src 前綴導入
+    try:
+        from ai_provider.ai_provider import chat
+        from search_engine.duckduckgo_search import search
+        from content_extract.website_to_markdown import WebsiteToMarkdown
+        from content_processing import WebContent, ContentQualityChecker, ContentProcessor, ContentSummarizer
+    except ImportError as e:
+        print(f"無法導入必要模組: {e}")
+        print("請確保您從專案根目錄執行此腳本，或使用 python -m src.search")
+        sys.exit(1)
 
 # Initialize Rich console
 console = Console()
