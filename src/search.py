@@ -599,36 +599,45 @@ Make sure to:
         """Generate the initial structure of the research report"""
         console.print("[bold cyan]Generating report structure...[/]")
 
-        prompt = f"""Create a detailed structure for a research report about '{topic}'.
+        prompt = f"""Create a detailed academic structure for a research report about '{topic}'.
         
-        The structure should include all major sections and subsections, but instead of actual content,
-        use [Content Tag] as a placeholder.
+        IMPORTANT INSTRUCTIONS:
+        1. Use proper academic formatting with clear hierarchy
+        2. Use Markdown headers for structure (# for title, ## for main sections, ### for subsections, etc.)
+        3. Include placeholder tags [CONTENT] for content that needs to be filled
+        4. For each section/subsection, include a brief description of what should go in that section
+        5. Make sure all sections are properly nested and hierarchically organized
         
-        IMPORTANT: Wrap your response in triple backticks (```). Only the content within the backticks will be used.
-        
-        Example format:
-        ```
-        # Title
-        [Content Tag]
-        
-        ## Abstract
-        [Content Tag]
-        
-        ## Introduction
-        [Content Tag]
-        
-        // ... other sections
-        ```
-        
-        Include all necessary sections for a comprehensive academic research report, such as:
-        - Background/Literature Review
-        - Methodology/Methods
-        - Results/Findings
-        - Discussion
+        REQUIRED SECTIONS (at minimum):
+        - Title
+        - Abstract
+        - Introduction (with subsections: Background, Problem Statement, Research Questions)
+        - Literature Review or Theoretical Framework
+        - Methodology
+        - Results/Findings (with multiple subsections based on themes)
+        - Discussion (with subsections connecting to research questions)
         - Conclusion
         - References
         
-        Each section should have appropriate subsections where relevant."""
+        FORMAT YOUR RESPONSE USING THIS EXAMPLE:
+        ```
+        # [Topic] Research Report
+        [CONTENT: Brief description of what should go in the title section]
+        
+        ## Abstract
+        [CONTENT: Brief description of what should go in the abstract]
+        
+        ## 1. Introduction
+        [CONTENT: Brief description of what should go in the introduction]
+        
+        ### 1.1 Background
+        [CONTENT: Brief description of what should go in this subsection]
+        
+        ... (and so on for all sections)
+        ```
+        
+        Make sure each section has a numerical prefix (e.g., 1., 1.1, etc.) for clear organization.
+        Wrap your response in triple backticks (```). Only the content within the backticks will be used."""
 
         response = self._call_llm(prompt)
         structure = self._extract_content_between_backticks(response)
@@ -645,33 +654,51 @@ Make sure to:
         # Organize search results by relevance and topic areas
         content_summary = self._organize_search_results(search_results)
 
-        # Parse the structure to identify all [Content Tag] locations
-        sections = []
-        current_section = ""
-        current_headers = []
+        # Parse the structure to identify all sections with [CONTENT] tags
+        section_pattern = r'(#{1,4}\s+[^\n]+)\n+(\[CONTENT[^\]]*\]:[^\n]+)'
+        sections = re.findall(section_pattern, report_structure)
 
-        for line in report_structure.split('\n'):
-            line = line.strip()
-            if line.startswith('#'):
-                if current_section and '[Content Tag]' in current_section:
-                    sections.append({
-                        'headers': current_headers.copy(),
-                        'content': current_section
-                    })
-                current_section = line + '\n'
-                current_headers = [line]
-            else:
-                current_section += line + '\n'
+        if not sections:
+            # Fallback to the older pattern if new format isn't found
+            section_pattern = r'(#{1,4}\s+[^\n]+)\n+\[CONTENT\]'
+            headers = re.findall(section_pattern, report_structure)
+            content_blocks = re.split(section_pattern, report_structure)
+            # Reconstruct sections from headers and content blocks
+            sections = []
+            for i, header in enumerate(headers):
+                if i+1 < len(content_blocks):
+                    content_desc = "[CONTENT]"
+                    sections.append((header, content_desc))
 
-        if current_section and '[Content Tag]' in current_section:
-            sections.append({
-                'headers': current_headers.copy(),
-                'content': current_section
-            })
+        # Create a hierarchical structure of the document
+        section_tree = []
+        current_levels = [0, 0, 0, 0]  # Track section numbers at each level
+
+        for header, content_desc in sections:
+            # Determine the level of the header (how many # symbols)
+            level = len(re.match(r'^(#+)', header).group(1)) - \
+                1  # 0-based index
+
+            # Update the current level
+            current_levels[level] += 1
+            # Reset all deeper levels
+            for i in range(level + 1, 4):
+                current_levels[i] = 0
+
+            # Create section entry
+            section_entry = {
+                'header': header,
+                'content_desc': content_desc,
+                'level': level,
+                'section_number': current_levels[:level+1],
+                'full_path': current_levels[:level+1],
+                'generated_content': ""
+            }
+            section_tree.append(section_entry)
 
         # Generate content for each section with comprehensive context
-        final_report = []
-        previous_content = ""
+        final_report = ""
+        previous_sections = []
         research_context = {
             'topic': topic,
             'focus_areas': focus_areas,
@@ -679,13 +706,53 @@ Make sure to:
             'key_findings': self._extract_key_findings(search_results)
         }
 
-        for section in sections:
-            section_title = ' '.join(h.lstrip('#').strip()
-                                     for h in section['headers'])
-            console.print(
-                f"[bold cyan]Generating content for section: {section_title}[/]")
+        # First pass: Generate content for each section
+        for i, section in enumerate(section_tree):
+            section_title = section['header'].lstrip('#').strip()
+            section_level = section['level']
+            section_path = '.'.join(
+                map(str, filter(lambda x: x > 0, section['section_number'])))
 
-            prompt = f"""Write comprehensive content for the {section_title} section of the research report about '{topic}'.
+            console.print(
+                f"[bold cyan]Generating content for section {section_path}: {section_title}[/]")
+
+            # Get previous related sections for context
+            context_sections = []
+            if section_level > 0:  # If not the main title
+                # Look for parent sections to provide context
+                for prev_section in reversed(section_tree[:i]):
+                    if prev_section['level'] < section_level:
+                        if prev_section['generated_content']:
+                            context_sections.append({
+                                'title': prev_section['header'].lstrip('#').strip(),
+                                'content': prev_section['generated_content'][:500] + "..." if len(prev_section['generated_content']) > 500 else prev_section['generated_content']
+                            })
+                        break
+
+            # Get siblings or related sections for context
+            for prev_section in section_tree[:i]:
+                if prev_section['level'] == section_level and prev_section['generated_content']:
+                    # Only include direct siblings or closely related sections
+                    if section_level > 0 and prev_section['section_number'][section_level-1] == section['section_number'][section_level-1]:
+                        context_sections.append({
+                            'title': prev_section['header'].lstrip('#').strip(),
+                            'content': prev_section['generated_content'][:300] + "..." if len(prev_section['generated_content']) > 300 else prev_section['generated_content']
+                        })
+
+            # Create a context string
+            context_str = ""
+            for ctx in context_sections:
+                context_str += f"Section: {ctx['title']}\n{ctx['content']}\n\n"
+
+            # Extract the description from the content tag if available
+            content_description = ""
+            if section['content_desc'].startswith("[CONTENT:"):
+                content_description = section['content_desc'].replace(
+                    "[CONTENT:", "").replace("]:", "").strip()
+
+            prompt = f"""Write academic, detailed content for section {section_path}: "{section_title}" of the research report about '{topic}'.
+
+            Section Description: {content_description}
 
             Research Context:
             - Topic: {research_context['topic']}
@@ -693,52 +760,96 @@ Make sure to:
             - Total Sources: {research_context['total_sources']}
             - Key Findings: {research_context['key_findings']}
 
-            Previous Content Generated:
-            {previous_content}
+            Previous/Related Sections:
+            {context_str}
 
             Research Data Available:
-            {content_summary}
+            {content_summary[:2000]}  # Limit to avoid token overflow
 
-            IMPORTANT: 
-            1. Wrap your response in triple backticks (```). Only the content within the backticks will be used.
-            2. Write detailed, well-structured content that integrates findings from multiple sources.
-            3. Make connections between different aspects of the research.
-            4. Include specific examples and data points from the research.
-            5. Maintain academic tone and proper citations.
-            6. Ensure content flows naturally from previous sections.
-            7. Do not include any meta-commentary or reasoning outside the backticks."""
+            IMPORTANT INSTRUCTIONS: 
+            1. Write detailed, well-structured academic content appropriate for section {section_path}: "{section_title}"
+            2. Maintain formal academic tone and proper citation style
+            3. Integrate findings from multiple sources when relevant
+            4. Make logical connections to other sections
+            5. Include specific examples and data points from the research
+            6. Don't include the section title/header in your response - just the content
+            7. Ensure proper paragraph structure and transitions
+            8. If this is a subsection, ensure it relates properly to its parent section
+            9. Wrap your response in triple backticks (```) - only content inside backticks will be used
+            10. For References section, use proper academic citation format
+
+            Length: Write approximately {500 if section_level >= 3 else 800 if section_level == 2 else 1200} words for this section."""
 
             response = self._call_llm(prompt)
             section_content = self._extract_content_between_backticks(response)
 
-            # Replace [Content Tag] with generated content
-            final_section = section['content'].replace(
-                '[Content Tag]', section_content)
-            final_report.append(final_section)
+            # Store the generated content in the section
+            section_tree[i]['generated_content'] = section_content
 
-            # Update previous content for context in next iteration
-            previous_content += f"\n{section_title}:\n{section_content}\n"
+            # Build the final report
+            if section['level'] == 0:  # Main title
+                final_report += f"{section['header']}\n\n{section_content}\n\n"
+            else:
+                final_report += f"{section['header']}\n\n{section_content}\n\n"
 
-        # Combine all sections
-        complete_report = '\n'.join(final_report)
+        # Second pass: Review and ensure consistency (only for longer reports)
+        if len(section_tree) > 5:
+            console.print(
+                "[bold cyan]Reviewing report for consistency and coherence...[/]")
+
+            # Generate an overall report review
+            review_prompt = f"""Review the following research report for consistency, coherence, and academic quality.
+            
+            Topic: {topic}
+            
+            Report Structure:
+            {final_report[:4000]}  # First part of the report
+            
+            ...
+            
+            {final_report[-4000:] if len(final_report) > 8000 else ""}  # Last part of the report
+            
+            Please identify any issues with:
+            1. Consistency between sections
+            2. Logical flow of arguments
+            3. Academic quality and rigor
+            4. Proper use of evidence and citations
+            5. Overall coherence of the narrative
+            
+            Provide specific recommendations for improving these aspects. Wrap your response in triple backticks."""
+
+            review_response = self._call_llm(review_prompt)
+            review_feedback = self._extract_content_between_backticks(
+                review_response)
+
+            console.print("[bold yellow]Report review feedback:[/]")
+            console.print(Markdown(review_feedback))
 
         # Add executive summary at the beginning
         executive_summary = self._generate_executive_summary(
-            topic, research_context, complete_report)
-        complete_report = f"# Executive Summary\n\n{executive_summary}\n\n{complete_report}"
+            topic, research_context, final_report)
+        final_report = f"# Executive Summary\n\n{executive_summary}\n\n{final_report}"
 
         # Store the report
-        self.log_data["report"] = complete_report
+        self.log_data["report"] = final_report
 
-        return complete_report
+        return final_report
 
     def _extract_key_findings(self, search_results: List[Dict[str, Any]]) -> str:
         """Extract key findings from search results"""
-        prompt = f"""Based on the following research results, identify the 5 most significant findings:
+        prompt = f"""Based on the following research results, identify the 5-7 most significant and insightful findings:
 
-        {self._organize_search_results(search_results)}
+        {self._organize_search_results(search_results)[:3000]}  # Limit to avoid token overflow
 
-        Format each finding as a concise statement. Focus on unique insights and important discoveries.
+        Format each finding as a concise but informative statement. Focus on unique insights and important discoveries.
+        
+        IMPORTANT:
+        1. Each finding should be evidence-based and specific
+        2. Prioritize findings that reveal patterns or connections across multiple sources
+        3. Include numerical data or specific facts when available
+        4. Format as a bulleted list with brief explanations
+        5. Focus on quality over quantity - each finding should be significant
+        6. Wrap your response in triple backticks (```)
         """
 
         response = self._call_llm(prompt)
@@ -746,7 +857,7 @@ Make sure to:
 
     def _generate_executive_summary(self, topic: str, research_context: Dict[str, Any], full_report: str) -> str:
         """Generate an executive summary of the research"""
-        prompt = f"""Create a comprehensive executive summary for the research report about '{topic}'.
+        prompt = f"""Create a comprehensive executive summary for the academic research report about '{topic}'.
 
         Research Context:
         - Topic: {research_context['topic']}
@@ -754,16 +865,25 @@ Make sure to:
         - Total Sources: {research_context['total_sources']}
         - Key Findings: {research_context['key_findings']}
 
-        Full Report:
-        {full_report}
+        Report Structure and Content:
+        {full_report[:5000]}  # First part of the report
+        
+        ...
+        
+        {full_report[-2000:] if len(full_report) > 7000 else ""}  # End of the report
 
-        IMPORTANT:
-        1. Wrap your response in triple backticks (```). Only the content within the backticks will be used.
-        2. Provide a clear overview of the research scope and methodology.
-        3. Highlight the most significant findings and their implications.
-        4. Include key recommendations or conclusions.
-        5. Keep it concise but comprehensive (2-3 paragraphs).
-        6. Do not include any meta-commentary or reasoning outside the backticks."""
+        EXECUTIVE SUMMARY REQUIREMENTS:
+        1. Begin with a clear statement of the research purpose and scope
+        2. Summarize the methodology used for the research
+        3. Present the most significant findings in a logical order
+        4. Highlight key conclusions and their implications
+        5. Include brief recommendations if appropriate
+        6. Keep it comprehensive yet concise (400-600 words)
+        7. Use formal academic language throughout
+        8. Structure with clear paragraphs that flow logically
+        9. Make it accessible to both expert and non-expert readers
+        10. Wrap your response in triple backticks (```)
+        """
 
         response = self._call_llm(prompt)
         return self._extract_content_between_backticks(response)
