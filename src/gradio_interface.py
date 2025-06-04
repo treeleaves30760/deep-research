@@ -382,50 +382,62 @@ def generate_final_report(progress=gr.Progress()):
 
 
 def create_interface():
-    with gr.Blocks(title="DeepSearch Research Agent") as demo:
-        gr.Markdown("# DeepSearch Research Agent")
+    custom_css = """
+    #header {text-align: center; margin-bottom: 1rem;}
+    .gradio-container {max-width: 900px; margin: 0 auto;}
+    """
+
+    theme = gr.themes.Soft(
+        primary_hue="indigo",
+        secondary_hue="blue",
+        neutral_hue="slate"
+    )
+
+    with gr.Blocks(title="DeepSearch Research Agent", css=custom_css, theme=theme) as demo:
+        gr.Markdown("# DeepSearch Research Agent", elem_id="header")
         gr.Markdown(
             "This web interface allows you to perform deep research on any topic using advanced search techniques and AI assistance.")
 
-        with gr.Tab("1. Initialize"):
-            with gr.Row():
-                with gr.Column():
-                    provider_dropdown = gr.Dropdown(
-                        choices=PROVIDERS,
-                        label="AI Provider",
-                        value="ollama"
-                    )
-                    model_textbox = gr.Textbox(
-                        label="Model Name (leave empty for default)",
-                        placeholder="e.g., deepseek-r1, gpt-4o"
-                    )
-                    # Add Ollama host configuration for Docker
-                    ollama_host_textbox = gr.Textbox(
-                        label="Ollama Host (only for Ollama provider)",
-                        placeholder="e.g., host.docker.internal:11434",
-                        value=OLLAMA_HOST
-                    )
+        gr.Markdown("## 1. Initialize")
+        with gr.Row():
+            with gr.Column():
+                provider_dropdown = gr.Dropdown(
+                    choices=PROVIDERS,
+                    label="AI Provider",
+                    value="ollama"
+                )
+                model_textbox = gr.Textbox(
+                    label="Model Name (leave empty for default)",
+                    placeholder="e.g., deepseek-r1, gpt-4o"
+                )
+                # Add Ollama host configuration for Docker
+                ollama_host_textbox = gr.Textbox(
+                    label="Ollama Host (only for Ollama provider)",
+                    placeholder="e.g., host.docker.internal:11434",
+                    value=OLLAMA_HOST
+                )
 
-                    def update_ollama_host(host):
-                        global OLLAMA_HOST
-                        if host and host.strip():
-                            OLLAMA_HOST = host.strip()
-                        return f"Ollama host set to: {OLLAMA_HOST}"
+                def update_ollama_host(host):
+                    global OLLAMA_HOST
+                    if host and host.strip():
+                        OLLAMA_HOST = host.strip()
+                    return f"Ollama host set to: {OLLAMA_HOST}"
 
-                    ollama_host_textbox.change(
-                        update_ollama_host,
-                        inputs=[ollama_host_textbox],
-                        outputs=[]
-                    )
+                ollama_host_textbox.change(
+                    update_ollama_host,
+                    inputs=[ollama_host_textbox],
+                    outputs=[]
+                )
 
-                    init_button = gr.Button("Initialize Agent")
-                with gr.Column():
-                    init_output = gr.Textbox(
-                        label="Initialization Status", interactive=False)
+                init_button = gr.Button("Initialize Agent")
+            with gr.Column():
+                init_output = gr.Textbox(
+                    label="Initialization Status", interactive=False
+                )
 
-        with gr.Tab("2. Define Research Topic"):
-            with gr.Row():
-                with gr.Column():
+        gr.Markdown("## 2. Define Research Topic")
+        with gr.Row():
+            with gr.Column():
                     topic_textbox = gr.Textbox(
                         label="Research Topic",
                         placeholder="Enter the topic you want to research"
@@ -537,25 +549,39 @@ def create_interface():
                     gr.update(visible=process_visible), questions_data
                 ]
 
-        with gr.Tab("3. Perform Research"):
-            with gr.Row():
-                with gr.Column():
-                    breadth_slider = gr.Slider(minimum=1, maximum=8, value=3, step=1,
-                                               label="Research Breadth (number of parallel search paths)")
-                    depth_slider = gr.Slider(minimum=1, maximum=5, value=2, step=1,
-                                             label="Research Depth (number of iterative searches)")
-                    extract_content_checkbox = gr.Checkbox(
-                        label="Extract webpage content", value=True)
-                    research_button = gr.Button("Conduct Research")
-                with gr.Column():
-                    research_output = gr.Textbox(
-                        label="Research Progress", interactive=False, max_lines=20)
-                    keywords_output = gr.Textbox(
-                        label="Generated Keywords", interactive=False)
+        gr.Markdown("## 3. Perform Research")
+        with gr.Row():
+            with gr.Column():
+                breadth_slider = gr.Slider(
+                    minimum=1,
+                    maximum=8,
+                    value=3,
+                    step=1,
+                    label="Research Breadth (number of parallel search paths)"
+                )
+                depth_slider = gr.Slider(
+                    minimum=1,
+                    maximum=5,
+                    value=2,
+                    step=1,
+                    label="Research Depth (number of iterative searches)"
+                )
+                extract_content_checkbox = gr.Checkbox(
+                    label="Extract webpage content",
+                    value=True
+                )
+                research_button = gr.Button("Conduct Research")
+            with gr.Column():
+                research_output = gr.Textbox(
+                    label="Research Progress", interactive=False, max_lines=20
+                )
+                keywords_output = gr.Textbox(
+                    label="Generated Keywords", interactive=False
+                )
 
-        with gr.Tab("4. Generate Report"):
-            generate_report_button = gr.Button("Generate Final Report")
-            with gr.Row():
+        gr.Markdown("## 4. Generate Report")
+        generate_report_button = gr.Button("Generate Final Report")
+        with gr.Row():
                 with gr.Column(scale=2):
                     report_markdown = gr.Markdown(
                         label="Final Research Report")
