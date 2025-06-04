@@ -252,7 +252,7 @@ OLLAMA_HOST=host.docker.internal:11434  # For Mac/Windows
 OLLAMA_HOST=172.17.0.1:11434  # For Linux (Docker bridge network)
 ```
 
-In the web interface, you can also change the Ollama host in the "Initialize" tab before connecting.
+In the web interface, you can also change the Ollama host in the "Initialize" section before connecting.
 
 ### Run Locally
 
@@ -266,3 +266,5 @@ The web interface provides a step-by-step workflow:
 2. **Define Research Topic**: Enter your research topic and answer the focusing questions
 3. **Perform Research**: Configure research parameters and start the research process
 4. **Generate Report**: Get a comprehensive report and download the results
+
+The Gradio interface now includes a polished theme and custom styling for a cleaner layout. The workflow is presented on a single scrolling page instead of multiple tabs.
