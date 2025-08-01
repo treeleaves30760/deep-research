@@ -79,6 +79,8 @@ def generate_questions(topic):
 
     try:
         CURRENT_TOPIC = topic
+        # Store topic in agent's log data
+        AGENT.log_data["topic"] = topic
         redirect_output = io.StringIO()
         with redirect_stdout(redirect_output):
             CURRENT_QUESTIONS = AGENT.generate_initial_questions(topic)
@@ -143,7 +145,7 @@ def process_answers(answer1, answer2, answer3):
         return f"Error processing answers: {str(e)}\n\nTraceback: {traceback.format_exc()}"
 
 
-def perform_research(breadth, depth, extract_content, progress=gr.Progress()):
+def perform_research(breadth, depth, extract_content, use_adaptive_search, max_iterations, progress=gr.Progress()):
     global AGENT, CURRENT_TOPIC, CURRENT_ANSWERS, CURRENT_SEARCH_RESULTS
 
     if not AGENT or not CURRENT_TOPIC or not CURRENT_ANSWERS:
@@ -172,8 +174,14 @@ def perform_research(breadth, depth, extract_content, progress=gr.Progress()):
             keyword_display += f"{i}. {display_keyword}\n"
 
         progress(0.2, "Starting deep search...")
-        CURRENT_SEARCH_RESULTS = AGENT.deep_search(
-            CURRENT_TOPIC, keywords, depth, extract_content=extract_content)
+        
+        # Use adaptive search if enabled
+        if use_adaptive_search:
+            CURRENT_SEARCH_RESULTS = AGENT.adaptive_deep_search(
+                CURRENT_TOPIC, keywords, max_iterations, extract_content=extract_content)
+        else:
+            CURRENT_SEARCH_RESULTS = AGENT.deep_search(
+                CURRENT_TOPIC, keywords, depth, extract_content=extract_content)
 
         # Restore stdout
         sys.stdout = old_stdout
@@ -380,11 +388,32 @@ def generate_final_report(progress=gr.Progress()):
 
 # Build Gradio Interface
 
-
 def create_interface():
     custom_css = """
     #header {text-align: center; margin-bottom: 1rem;}
-    .gradio-container {max-width: 900px; margin: 0 auto;}
+    .gradio-container {max-width: 1200px; margin: 0 auto;}
+    .section-header {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 10px;
+        border-radius: 8px;
+        margin: 10px 0;
+        text-align: center;
+        font-weight: bold;
+    }
+    .status-box {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 10px;
+        margin: 5px 0;
+    }
+    .research-controls {
+        background-color: #f1f3f4;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+    }
     """
 
     theme = gr.themes.Soft(
@@ -394,241 +423,331 @@ def create_interface():
     )
 
     with gr.Blocks(title="DeepSearch Research Agent", css=custom_css, theme=theme) as demo:
-        gr.Markdown("# DeepSearch Research Agent", elem_id="header")
+        # Header
+        gr.Markdown("# 🔍 DeepSearch Research Agent", elem_id="header")
         gr.Markdown(
-            "This web interface allows you to perform deep research on any topic using advanced search techniques and AI assistance.")
-
-        gr.Markdown("## 1. Initialize")
+            "**Advanced AI-powered research tool with adaptive search capabilities**\n"
+            "This tool performs comprehensive research using intelligent search strategies that adapt based on results."
+        )
+        
+        # Status indicator
         with gr.Row():
             with gr.Column():
-                provider_dropdown = gr.Dropdown(
-                    choices=PROVIDERS,
-                    label="AI Provider",
-                    value="ollama"
-                )
-                model_textbox = gr.Textbox(
-                    label="Model Name (leave empty for default)",
-                    placeholder="e.g., deepseek-r1, gpt-4o"
-                )
-                # Add Ollama host configuration for Docker
-                ollama_host_textbox = gr.Textbox(
-                    label="Ollama Host (only for Ollama provider)",
-                    placeholder="e.g., host.docker.internal:11434",
-                    value=OLLAMA_HOST
-                )
-
-                def update_ollama_host(host):
-                    global OLLAMA_HOST
-                    if host and host.strip():
-                        OLLAMA_HOST = host.strip()
-                    return f"Ollama host set to: {OLLAMA_HOST}"
-
-                ollama_host_textbox.change(
-                    update_ollama_host,
-                    inputs=[ollama_host_textbox],
-                    outputs=[]
-                )
-
-                init_button = gr.Button("Initialize Agent")
-            with gr.Column():
-                init_output = gr.Textbox(
-                    label="Initialization Status", interactive=False
-                )
-
-        gr.Markdown("## 2. Define Research Topic")
+                status_display = gr.Markdown("**Status:** Ready to start", elem_classes=["status-box"])
+        
+        # Main content in tabs for better organization but all on same page
         with gr.Row():
-            with gr.Column():
+            # Left column - Setup and Controls
+            with gr.Column(scale=1):
+                gr.Markdown("### 🚀 Setup", elem_classes=["section-header"])
+                
+                # AI Provider setup
+                with gr.Group():
+                    provider_dropdown = gr.Dropdown(
+                        choices=PROVIDERS,
+                        label="AI Provider",
+                        value="ollama"
+                    )
+                    model_textbox = gr.Textbox(
+                        label="Model Name (optional)",
+                        placeholder="e.g., deepseek-r1, gpt-4o",
+                        scale=2
+                    )
+                    ollama_host_textbox = gr.Textbox(
+                        label="Ollama Host (Docker only)",
+                        placeholder="host.docker.internal:11434",
+                        value=OLLAMA_HOST,
+                        visible=True
+                    )
+                    init_button = gr.Button("🔧 Initialize Agent", variant="primary")
+                    init_output = gr.Textbox(
+                        label="Initialization Status", 
+                        interactive=False,
+                        max_lines=2
+                    )
+                
+                # Research Topic
+                gr.Markdown("### 📋 Research Topic", elem_classes=["section-header"])
+                with gr.Group():
                     topic_textbox = gr.Textbox(
                         label="Research Topic",
-                        placeholder="Enter the topic you want to research"
+                        placeholder="Enter your research topic here...",
+                        lines=2
                     )
-                    generate_questions_button = gr.Button("Generate Questions")
-
-            # System output (can be hidden if desired)
-            questions_output = gr.Textbox(
-                label="System Output", interactive=False, visible=True)
-
-            # Three fixed question-answer blocks
-            with gr.Row(visible=True) as questions_container:
-                with gr.Column():
+                    generate_questions_button = gr.Button("📝 Generate Focus Questions", variant="secondary")
+                
+                # Research Configuration
+                gr.Markdown("### ⚙️ Research Settings", elem_classes=["section-header"])
+                with gr.Group(elem_classes=["research-controls"]):
+                    with gr.Row():
+                        breadth_slider = gr.Slider(
+                            minimum=1,
+                            maximum=8,
+                            value=3,
+                            step=1,
+                            label="Search Breadth",
+                            info="Number of parallel search paths"
+                        )
+                        depth_slider = gr.Slider(
+                            minimum=1,
+                            maximum=5,
+                            value=2,
+                            step=1,
+                            label="Fixed Depth",
+                            info="For traditional search mode"
+                        )
+                    
+                    extract_content_checkbox = gr.Checkbox(
+                        label="📄 Extract Full Webpage Content",
+                        value=True,
+                        info="Deeper analysis but slower"
+                    )
+                    
+                    use_adaptive_search_checkbox = gr.Checkbox(
+                        label="🤖 Use Adaptive Search (Recommended)",
+                        value=True,
+                        info="AI decides when to stop searching"
+                    )
+                    
+                    max_iterations_slider = gr.Slider(
+                        minimum=2,
+                        maximum=10,
+                        value=5,
+                        step=1,
+                        label="Max Iterations",
+                        info="Maximum search rounds for adaptive mode"
+                    )
+                
+                research_button = gr.Button("🔬 Start Research", variant="primary", size="lg")
+                generate_report_button = gr.Button("📊 Generate Final Report", variant="primary", size="lg")
+            
+            # Right column - Results and Interaction
+            with gr.Column(scale=2):
+                # Questions and Answers Section
+                gr.Markdown("### 💭 Focus Questions", elem_classes=["section-header"])
+                
+                questions_output = gr.Textbox(
+                    label="Question Generation Status", 
+                    interactive=False, 
+                    visible=True,
+                    max_lines=3
+                )
+                
+                # Dynamic Questions Display
+                with gr.Group(visible=True) as questions_container:
                     # Question 1
-                    question1_label = gr.Markdown("Question 1", visible=False)
-                    question1_text = gr.Markdown("", visible=False)
-                    answer1 = gr.Textbox(
-                        label="Your Answer",
-                        placeholder="Type your answer here",
-                        visible=False,
-                        interactive=True
-                    )
-
+                    with gr.Group(visible=False) as question1_group:
+                        question1_text = gr.Markdown("", visible=False)
+                        answer1 = gr.Textbox(
+                            label="Your Answer",
+                            placeholder="Type your answer here...",
+                            visible=False,
+                            interactive=True,
+                            lines=2
+                        )
+                    
                     # Question 2
-                    question2_label = gr.Markdown("Question 2", visible=False)
-                    question2_text = gr.Markdown("", visible=False)
-                    answer2 = gr.Textbox(
-                        label="Your Answer",
-                        placeholder="Type your answer here",
-                        visible=False,
-                        interactive=True
-                    )
-
+                    with gr.Group(visible=False) as question2_group:
+                        question2_text = gr.Markdown("", visible=False)
+                        answer2 = gr.Textbox(
+                            label="Your Answer",
+                            placeholder="Type your answer here...",
+                            visible=False,
+                            interactive=True,
+                            lines=2
+                        )
+                    
                     # Question 3
-                    question3_label = gr.Markdown("Question 3", visible=False)
-                    question3_text = gr.Markdown("", visible=False)
-                    answer3 = gr.Textbox(
-                        label="Your Answer",
-                        placeholder="Type your answer here",
-                        visible=False,
-                        interactive=True
+                    with gr.Group(visible=False) as question3_group:
+                        question3_text = gr.Markdown("", visible=False)
+                        answer3 = gr.Textbox(
+                            label="Your Answer",
+                            placeholder="Type your answer here...",
+                            visible=False,
+                            interactive=True,
+                            lines=2
+                        )
+                    
+                    process_answers_button = gr.Button("✅ Submit Answers", visible=False, variant="secondary")
+                    answers_output = gr.Textbox(
+                        label="Answer Processing Status", 
+                        interactive=False,
+                        max_lines=2
                     )
-
-            # Process answers button
-            process_answers_button = gr.Button("Submit Answers", visible=False)
-            answers_output = gr.Textbox(
-                label="Status", interactive=False)
-
-            # Store questions in state
-            questions_state = gr.State([])
-
-            # Function to update the questions display
-            def update_questions_display(questions_data, output_text):
-                if not questions_data or len(questions_data) == 0:
-                    return [
-                        gr.update(visible=False), gr.update(
-                            visible=False), gr.update(visible=False),
-                        gr.update(visible=False), gr.update(
-                            visible=False), gr.update(visible=False),
-                        gr.update(visible=False), gr.update(
-                            visible=False), gr.update(visible=False),
-                        gr.update(visible=False), questions_data
-                    ]
-
-                # Make sure we have up to 3 questions
-                questions = questions_data[:3]
-                while len(questions) < 3:
-                    questions.append({"question": "", "options": []})
-
-                # Get the first 3 questions
-                q1 = questions[0]
-                q2 = questions[1]
-                q3 = questions[2]
-
-                # Format questions with options
-                def format_question_with_options(q):
-                    if not q["question"]:
-                        return ""
-
-                    question_text = q["question"]
-
-                    if q["options"]:
-                        options_text = "\n\n"
-                        for i, option in enumerate(q["options"]):
-                            options_text += f"{chr(97+i)}) {option}\n"
-                        question_text += options_text
-
-                    return question_text
-
-                q1_text = format_question_with_options(q1)
-                q2_text = format_question_with_options(q2)
-                q3_text = format_question_with_options(q3)
-
-                # Determine visibility based on if questions exist
-                q1_visible = bool(q1["question"])
-                q2_visible = bool(q2["question"])
-                q3_visible = bool(q3["question"])
-
-                # Show the process button if we have at least one question
-                process_visible = q1_visible
-
+                
+                # Research Progress Section
+                gr.Markdown("### 🔬 Research Progress", elem_classes=["section-header"])
+                
+                with gr.Row():
+                    with gr.Column():
+                        research_output = gr.Textbox(
+                            label="Live Research Log", 
+                            interactive=False, 
+                            max_lines=15,
+                            info="Real-time search progress and AI decisions"
+                        )
+                    with gr.Column():
+                        keywords_output = gr.Textbox(
+                            label="Generated Keywords", 
+                            interactive=False,
+                            max_lines=8,
+                            info="Search terms being used"
+                        )
+                
+                # Final Report Section
+                gr.Markdown("### 📑 Research Report", elem_classes=["section-header"])
+                
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        report_markdown = gr.Markdown(
+                            "Report will appear here after research is complete...",
+                            label="Final Research Report"
+                        )
+                    with gr.Column(scale=1):
+                        report_status = gr.Textbox(
+                            label="Report Status", 
+                            interactive=False,
+                            max_lines=3
+                        )
+                        report_download = gr.File(
+                            label="📥 Download Results",
+                            visible=False
+                        )
+        
+        # Store questions in state
+        questions_state = gr.State([])
+        
+        # Enhanced question display function
+        def update_questions_display(questions_data, output_text):
+            if not questions_data or len(questions_data) == 0:
                 return [
-                    gr.update(visible=q1_visible), gr.update(
-                        value=q1_text, visible=q1_visible), gr.update(visible=q1_visible, interactive=True),
-                    gr.update(visible=q2_visible), gr.update(
-                        value=q2_text, visible=q2_visible), gr.update(visible=q2_visible, interactive=True),
-                    gr.update(visible=q3_visible), gr.update(
-                        value=q3_text, visible=q3_visible), gr.update(visible=q3_visible, interactive=True),
-                    gr.update(visible=process_visible), questions_data
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+                    gr.update(visible=False), questions_data
                 ]
 
-        gr.Markdown("## 3. Perform Research")
-        with gr.Row():
-            with gr.Column():
-                breadth_slider = gr.Slider(
-                    minimum=1,
-                    maximum=8,
-                    value=3,
-                    step=1,
-                    label="Research Breadth (number of parallel search paths)"
-                )
-                depth_slider = gr.Slider(
-                    minimum=1,
-                    maximum=5,
-                    value=2,
-                    step=1,
-                    label="Research Depth (number of iterative searches)"
-                )
-                extract_content_checkbox = gr.Checkbox(
-                    label="Extract webpage content",
-                    value=True
-                )
-                research_button = gr.Button("Conduct Research")
-            with gr.Column():
-                research_output = gr.Textbox(
-                    label="Research Progress", interactive=False, max_lines=20
-                )
-                keywords_output = gr.Textbox(
-                    label="Generated Keywords", interactive=False
-                )
+            # Ensure we have up to 3 questions
+            questions = questions_data[:3]
+            while len(questions) < 3:
+                questions.append({"question": "", "options": []})
 
-        gr.Markdown("## 4. Generate Report")
-        generate_report_button = gr.Button("Generate Final Report")
-        with gr.Row():
-                with gr.Column(scale=2):
-                    report_markdown = gr.Markdown(
-                        label="Final Research Report")
-                with gr.Column(scale=1):
-                    report_status = gr.Textbox(
-                        label="Report Status", interactive=False)
-                    report_download = gr.File(label="Download Results")
+            # Format questions with better styling
+            def format_question_with_options(q, num):
+                if not q["question"]:
+                    return ""
 
-        # Connect components
+                question_text = f"**Question {num}:** {q['question']}"
+
+                if q["options"]:
+                    options_text = "\n\n**Options:**\n"
+                    for i, option in enumerate(q["options"]):
+                        options_text += f"**{chr(97+i)}.** {option}\n"
+                    question_text += options_text
+
+                return question_text
+
+            q1_text = format_question_with_options(questions[0], 1)
+            q2_text = format_question_with_options(questions[1], 2)
+            q3_text = format_question_with_options(questions[2], 3)
+
+            # Determine visibility
+            q1_visible = bool(questions[0]["question"])
+            q2_visible = bool(questions[1]["question"])
+            q3_visible = bool(questions[2]["question"])
+            process_visible = q1_visible
+
+            return [
+                gr.update(visible=q1_visible), gr.update(value=q1_text, visible=q1_visible), gr.update(visible=q1_visible),
+                gr.update(visible=q2_visible), gr.update(value=q2_text, visible=q2_visible), gr.update(visible=q2_visible),
+                gr.update(visible=q3_visible), gr.update(value=q3_text, visible=q3_visible), gr.update(visible=q3_visible),
+                gr.update(visible=process_visible), questions_data
+            ]
+        
+        # Enhanced status updates
+        def update_status(message):
+            return f"**Status:** {message}"
+        
+        # Event handlers with status updates
+        def init_agent_with_status(provider, model):
+            success, message = initialize_agent(provider, model)
+            status = "✅ Agent Ready" if success else "❌ Initialization Failed"
+            return message, update_status(status)
+        
+        def generate_questions_with_status(topic):
+            if not topic.strip():
+                return "Please enter a research topic first", [], update_status("⚠️ Topic Required")
+            
+            output, questions = generate_questions(topic)
+            status = "✅ Questions Generated" if questions else "❌ Question Generation Failed"
+            return output, questions, update_status(status)
+        
+        def process_answers_with_status(answer1, answer2, answer3):
+            result = process_answers(answer1, answer2, answer3)
+            if "Successfully recorded" in result:
+                status = "✅ Answers Recorded"
+            else:
+                status = "❌ Answer Processing Failed"
+            return result, update_status(status)
+        
+        def perform_research_with_status(breadth, depth, extract_content, use_adaptive_search, max_iterations):
+            max_iter = int(max_iterations)
+            
+            output, keywords = perform_research(breadth, depth, extract_content, use_adaptive_search, max_iter)
+            if "Error" not in output:
+                status = "✅ Research Complete"
+            else:
+                status = "❌ Research Failed"
+            return output, keywords, update_status(status)
+        
+        def generate_report_with_status():
+            report, download, status_msg = generate_final_report()
+            if download:
+                status = "✅ Report Generated"
+                download_visible = True
+            else:
+                status = "❌ Report Generation Failed"
+                download_visible = False
+            return report, download if download_visible else None, status_msg, update_status(status), gr.update(visible=download_visible)
+
+        # Connect all components
         init_button.click(
-            initialize_agent,
+            init_agent_with_status,
             inputs=[provider_dropdown, model_textbox],
-            outputs=[init_output]
+            outputs=[init_output, status_display]
         )
 
-        # Update the question display workflow with proper state management
         generate_questions_button.click(
-            generate_questions,
+            generate_questions_with_status,
             inputs=[topic_textbox],
-            outputs=[questions_output, questions_state]
+            outputs=[questions_output, questions_state, status_display]
         ).then(
             update_questions_display,
             inputs=[questions_state, questions_output],
             outputs=[
-                question1_label, question1_text, answer1,
-                question2_label, question2_text, answer2,
-                question3_label, question3_text, answer3,
+                question1_group, question1_text, answer1,
+                question2_group, question2_text, answer2,
+                question3_group, question3_text, answer3,
                 process_answers_button, questions_state
             ]
         )
 
         process_answers_button.click(
-            process_answers,
+            process_answers_with_status,
             inputs=[answer1, answer2, answer3],
-            outputs=[answers_output]
+            outputs=[answers_output, status_display]
         )
 
         research_button.click(
-            perform_research,
-            inputs=[breadth_slider, depth_slider, extract_content_checkbox],
-            outputs=[research_output, keywords_output]
+            perform_research_with_status,
+            inputs=[breadth_slider, depth_slider, extract_content_checkbox, use_adaptive_search_checkbox, max_iterations_slider],
+            outputs=[research_output, keywords_output, status_display]
         )
 
         generate_report_button.click(
-            generate_final_report,
+            generate_report_with_status,
             inputs=[],
-            outputs=[report_markdown, report_download, report_status]
+            outputs=[report_markdown, report_download, report_status, status_display, report_download]
         )
 
     return demo

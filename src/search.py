@@ -42,7 +42,8 @@ class DeepSearchAgent:
             "answers": [],
             "keywords": [],
             "report": "",
-            "webpage_contents": []  # Store webpage markdown content
+            "webpage_contents": [],  # Store webpage markdown content
+            "search_controls": []  # Store adaptive search control decisions
         }
 
         # Initialize WebsiteToMarkdown converter
@@ -422,6 +423,112 @@ Make sure to:
 
         return all_results
 
+    def adaptive_deep_search(self, topic: str, keywords: List[str], max_iterations: int = 5, extract_content: bool = True) -> List[Dict[str, Any]]:
+        """Perform adaptive deep search where LLM decides when to stop based on search results"""
+        import time
+        import random
+        
+        all_results = []
+        current_keywords = keywords.copy()
+        iteration = 0
+        search_control = {"continue": True, "reason": "", "confidence": 0}
+        
+        console.print(f"[bold magenta]Starting adaptive research on topic: {topic}[/]")
+        console.print(f"[dim]Initial keywords: {len(current_keywords)}[/dim]")
+        
+        while search_control["continue"] and iteration < max_iterations:
+            iteration += 1
+            console.print(f"[bold magenta]Research iteration {iteration}[/]")
+            
+            iteration_results = []
+            
+            # Search for each current keyword
+            for i, keyword in enumerate(current_keywords):
+                # Extract the keyword from the search_words tags if present
+                search_words_pattern = r'<search_words>(.*?)</search_words>'
+                search_words_match = re.search(search_words_pattern, keyword)
+                
+                if search_words_match:
+                    display_keyword = search_words_match.group(1).strip()
+                    search_query = f"{topic} {display_keyword}"
+                else:
+                    display_keyword = keyword
+                    search_query = f"{topic} {display_keyword}"
+                
+                console.print(f"  [bold]Searching {i+1}/{len(current_keywords)}:[/] {display_keyword}")
+                
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn(f"[bold yellow]Searching...[/]"),
+                    transient=True,
+                ) as progress:
+                    progress.add_task("searching", total=None)
+                    results = search(search_query, limit=10)
+                
+                if results['success']:
+                    console.print(f"    [green]Found {len(results['data'])} results[/]")
+                    
+                    # If extract_content is True, fetch and convert webpage content to markdown
+                    if extract_content:
+                        self._extract_webpage_content(
+                            results['data'], topic, display_keyword, iteration-1)
+                    
+                    iteration_results.extend(results['data'])
+                    
+                    # Store search results
+                    self.log_data["search_results"].extend([
+                        {
+                            "keyword": display_keyword,
+                            "search_query": search_query,
+                            "iteration": iteration,
+                            "results": results['data']
+                        }
+                    ])
+                else:
+                    console.print(f"    [red]Error: {results['error']}[/red]")
+                
+                # Add random sleep between searches
+                if i < len(current_keywords) - 1:
+                    sleep_time = random.uniform(1, 3)
+                    time.sleep(sleep_time)
+            
+            all_results.extend(iteration_results)
+            
+            # After each iteration, let LLM analyze results and decide next steps
+            console.print("[bold cyan]Analyzing search results and planning next steps...[/]")
+            search_control = self._analyze_search_results_and_plan(
+                topic, all_results, iteration, max_iterations)
+            
+            # Store the control decision
+            self.log_data["search_controls"] = self.log_data.get("search_controls", [])
+            self.log_data["search_controls"].append({
+                "iteration": iteration,
+                "control": search_control,
+                "total_results": len(all_results)
+            })
+            
+            # Display the decision
+            if search_control["continue"]:
+                console.print(f"[bold green]✓ Continuing research[/]: {search_control['reason']}")
+                console.print(f"[dim]Confidence: {search_control['confidence']}/10[/dim]")
+                
+                # Generate new keywords for next iteration
+                if iteration < max_iterations:
+                    new_keywords = self._generate_refined_keywords(
+                        topic, all_results, len(current_keywords))
+                    current_keywords = new_keywords
+                    
+                    # Add sleep between iterations
+                    sleep_time = random.uniform(2, 5)
+                    time.sleep(sleep_time)
+            else:
+                console.print(f"[bold red]⏹ Stopping research[/]: {search_control['reason']}")
+                console.print(f"[dim]Confidence: {search_control['confidence']}/10[/dim]")
+                break
+        
+        console.print(f"[bold magenta]Research completed after {iteration} iterations with {len(all_results)} total results[/]")
+        return all_results
+
     def _extract_webpage_content(self, search_results: List[Dict[str, Any]], topic: str, keyword: str, iteration: int):
         """Extract content from webpages found in search results"""
         import time
@@ -586,6 +693,103 @@ Make sure to:
         keywords = keywords[:num_keywords]
 
         return keywords
+
+    def _analyze_search_results_and_plan(self, topic: str, all_results: List[Dict], iteration: int, max_iterations: int) -> Dict[str, Any]:
+        """Use LLM to analyze search results and decide whether to continue searching"""
+        
+        # Prepare a summary of current results for analysis
+        results_summary = self._prepare_results_summary(all_results, limit=20)
+        
+        prompt = f"""Analyze the search results for the topic "{topic}" and decide whether to continue searching.
+
+Current Status:
+- Iteration: {iteration}/{max_iterations}
+- Total results found: {len(all_results)}
+- Recent results summary: {results_summary}
+
+Your task is to evaluate:
+1. Coverage: Are we getting comprehensive information about the topic?
+2. Quality: Are the results relevant and high-quality?
+3. Diminishing Returns: Are new searches providing significantly different information?
+4. Completeness: Do we have enough information to answer the research questions thoroughly?
+
+Respond with a JSON object containing:
+{{
+    "continue": true/false,
+    "reason": "Brief explanation of the decision (max 100 characters)",
+    "confidence": 1-10,
+    "suggested_focus": ["area1", "area2"] // If continuing, what areas to focus on next
+}}
+
+Guidelines:
+- Continue if: coverage is incomplete, results are highly relevant, or new valuable information is being found
+- Stop if: topic is well-covered, results are becoming repetitive, or quality is declining significantly
+- Consider the iteration number - don't continue unnecessarily but ensure thorough coverage
+"""
+
+        try:
+            response = self._call_llm(prompt)
+            
+            # Try to extract JSON from the response
+            json_match = re.search(r'\{[^}]*\}', response, re.DOTALL)
+            if json_match:
+                try:
+                    control_decision = json.loads(json_match.group())
+                    
+                    # Validate the structure
+                    if all(key in control_decision for key in ["continue", "reason", "confidence"]):
+                        # Ensure boolean and int types
+                        control_decision["continue"] = bool(control_decision["continue"])
+                        control_decision["confidence"] = int(control_decision.get("confidence", 5))
+                        control_decision["confidence"] = max(1, min(10, control_decision["confidence"]))
+                        
+                        return control_decision
+                except json.JSONDecodeError:
+                    pass
+            
+            # Fallback: analyze response text for continue/stop keywords
+            response_lower = response.lower()
+            if any(word in response_lower for word in ["continue", "more", "keep", "additional"]):
+                return {
+                    "continue": True,
+                    "reason": "LLM suggested continuing (text analysis)",
+                    "confidence": 6
+                }
+            else:
+                return {
+                    "continue": False,
+                    "reason": "LLM suggested stopping (text analysis)",
+                    "confidence": 6
+                }
+                
+        except Exception as e:
+            console.print(f"[yellow]Error in LLM analysis: {str(e)}. Using heuristic decision.[/yellow]")
+            
+            # Fallback heuristic decision
+            if iteration >= max_iterations:
+                return {"continue": False, "reason": "Maximum iterations reached", "confidence": 10}
+            elif len(all_results) < 5:
+                return {"continue": True, "reason": "Insufficient results found", "confidence": 8}
+            elif iteration == 1:
+                return {"continue": True, "reason": "First iteration completed", "confidence": 7}
+            else:
+                return {"continue": False, "reason": "Heuristic stopping point", "confidence": 5}
+
+    def _prepare_results_summary(self, results: List[Dict], limit: int = 20) -> str:
+        """Prepare a concise summary of search results for LLM analysis"""
+        if not results:
+            return "No results found"
+        
+        # Take the most recent results up to the limit
+        recent_results = results[-limit:] if len(results) > limit else results
+        
+        summary_items = []
+        for i, result in enumerate(recent_results):
+            title = result.get('title', 'No title')[:60]
+            url_domain = result.get('url', '').split('/')[2] if result.get('url') else 'unknown'
+            summary_items.append(f"{i+1}. {title}... ({url_domain})")
+        
+        return "\n".join(summary_items)
 
     def _extract_content_between_backticks(self, text: str) -> str:
         """Extract content between triple backticks, if exists"""
@@ -865,6 +1069,10 @@ Make sure to:
         log_path = output_path / "search_logs.json"
         with open(log_path, "w") as f:
             json.dump(self.log_data, f, indent=2)
+        
+        # Save search control decisions if adaptive search was used
+        if self.log_data.get("search_controls"):
+            self.export_search_control_log(str(output_path))
 
         # Save content quality report
         quality_report_path = output_path / "content_quality_report.md"
@@ -914,6 +1122,66 @@ Make sure to:
 
         console.print(f"[bold green]Results saved to:[/] {output_path}")
         return str(output_path)
+
+    def export_search_control_log(self, output_dir: str) -> str:
+        """Export the search control decisions to a JSON file"""
+        import json
+        from pathlib import Path
+        
+        # Create output directory if it doesn't exist
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Prepare the control log data
+        control_log = {
+            "research_topic": self.log_data.get("topic", "Unknown"),
+            "search_method": "adaptive_search" if self.log_data.get("search_controls") else "fixed_search",
+            "total_iterations": len(self.log_data.get("search_controls", [])),
+            "total_results_found": len(self.log_data.get("search_results", [])),
+            "decisions": self.log_data.get("search_controls", []),
+            "summary": self._generate_search_control_summary()
+        }
+        
+        # Save to JSON file
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"search_control_log_{timestamp}.json"
+        filepath = os.path.join(output_dir, filename)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(control_log, f, indent=2, ensure_ascii=False)
+        
+        console.print(f"[green]Search control log exported to: {filepath}[/green]")
+        return filepath
+    
+    def _generate_search_control_summary(self) -> Dict[str, Any]:
+        """Generate a summary of search control decisions"""
+        controls = self.log_data.get("search_controls", [])
+        
+        if not controls:
+            return {"message": "No adaptive search control data available"}
+        
+        # Analyze the decisions
+        total_iterations = len(controls)
+        stopped_early = False
+        stop_reason = "Maximum iterations reached"
+        
+        if controls:
+            last_decision = controls[-1]["control"]
+            if not last_decision.get("continue", True):
+                stopped_early = True
+                stop_reason = last_decision.get("reason", "AI decided to stop")
+        
+        # Calculate average confidence
+        confidences = [control["control"].get("confidence", 5) for control in controls]
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+        
+        return {
+            "total_iterations": total_iterations,
+            "stopped_early": stopped_early,
+            "stop_reason": stop_reason,
+            "average_confidence": round(avg_confidence, 2),
+            "confidence_trend": confidences,
+            "results_per_iteration": [control["total_results"] for control in controls]
+        }
 
     def close(self):
         """Close the WebsiteToMarkdown converter"""
